@@ -143,4 +143,4 @@ cargo clippy --workspace
 
 Licensed under the [MIT License](LICENSE).
 
-Copyright (c) 2026 linktime.
+Copyright (c) 2026 StarEcho Pte. Ltd.

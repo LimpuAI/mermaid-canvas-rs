@@ -1,0 +1,55 @@
+[package]
+name = "mermaid-canvas-demo"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "demo-flowchart"
+path = "src/bin/demo_flowchart.rs"
+
+[[bin]]
+name = "demo-sequence"
+path = "src/bin/demo_sequence.rs"
+
+[[bin]]
+name = "demo-class"
+path = "src/bin/demo_class.rs"
+
+[[bin]]
+name = "demo-state"
+path = "src/bin/demo_state.rs"
+
+[[bin]]
+name = "demo-er"
+path = "src/bin/demo_er.rs"
+
+[[bin]]
+name = "demo-requirement"
+path = "src/bin/demo_requirement.rs"
+
+[[bin]]
+name = "demo-packet"
+path = "src/bin/demo_packet.rs"
+
+[[bin]]
+name = "demo-themes"
+path = "src/bin/demo_themes.rs"
+
+[dependencies]
+mermaid-canvas-core = { path = "../mermaid-canvas-core" }
+mermaid-canvas-component = { path = "../mermaid-canvas-component" }
+mermaid-canvas-wit = { path = "../mermaid-canvas-wit", default-features = false }
+
+tiny-skia = "0.12"
+fontdue = "0.9"
+softbuffer = "0.4"
+raw-window-handle = "0.6"
+
+wasmtime = "44"
+wasmtime-wasi = "44"
+ab_glyph = "0.2"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+winit = "0.30"

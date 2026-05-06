@@ -1,0 +1,71 @@
+/// mermaid-canvas WIT world definition
+package mermaid-canvas:viz;
+
+interface diagram-parser {
+    record diagram-node {
+        id: string,
+        label: string,
+        shape: string,
+        fill: option<string>,
+        stroke: option<string>,
+    }
+
+    record diagram-edge {
+        source: string,
+        target: string,
+        label: option<string>,
+        directed: bool,
+    }
+
+    record diagram-ast {
+        kind: string,
+        direction: string,
+        nodes: list<diagram-node>,
+        edges: list<diagram-edge>,
+        title: option<string>,
+    }
+
+    parse: func(source: string) -> result<diagram-ast, string>;
+}
+
+interface diagram-renderer {
+    record draw-cmd {
+        cmd-type: string,
+        params: list<f64>,
+        fill: option<string>,
+        stroke: option<string>,
+        stroke-width: option<f64>,
+        text-content: option<string>,
+        group-depth: u32,
+    }
+
+    record hit-region {
+        index: u32,
+        bounds-x: f64,
+        bounds-y: f64,
+        bounds-w: f64,
+        bounds-h: f64,
+    }
+
+    record layer {
+        kind: string,
+        dirty: bool,
+        z-index: u32,
+        commands: list<draw-cmd>,
+        hit-regions: list<hit-region>,
+    }
+
+    record render-result {
+        layers: list<layer>,
+        width: f64,
+        height: f64,
+    }
+
+    render: func(source: string, theme: option<string>) -> result<render-result, string>;
+    hit-test: func(render-data: render-result, x: f64, y: f64, tolerance: f64) -> option<u32>;
+}
+
+world mermaid-canvas-viz {
+    export diagram-parser;
+    export diagram-renderer;
+}

@@ -1,0 +1,21 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/mermaid-canvas-core",
+    "crates/mermaid-canvas-component",
+    "crates/mermaid-canvas-wit",
+    "crates/mermaid-canvas-wit-wasm",
+    "crates/mermaid-canvas-demo",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["linktime <fankong>"]
+license = "MIT"
+repository = "https://github.com/linktime/mermaid-canvas-rs"
+
+[workspace.dependencies]
+# Core dependencies
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

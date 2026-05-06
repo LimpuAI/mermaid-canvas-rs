@@ -1,0 +1,15 @@
+[package]
+name = "mermaid-canvas-component"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+mermaid-canvas-core = { path = "../mermaid-canvas-core" }
+regex = "1"
+once_cell = "1"
+
+[features]
+default = []

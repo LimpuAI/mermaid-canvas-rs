@@ -253,6 +253,109 @@ pub struct Subgraph {
     pub style: NodeStyle,
 }
 
+/// 序列图激活记录
+#[derive(Debug, Clone, PartialEq)]
+pub struct SequenceActivation {
+    /// 参与者 ID
+    pub participant_id: String,
+    /// 起始步骤索引
+    pub start_step: usize,
+    /// 结束步骤索引 (None = 仍在激活)
+    pub end_step: Option<usize>,
+    /// 嵌套深度
+    pub depth: usize,
+}
+
+/// 笔记位置
+#[derive(Debug, Clone, PartialEq)]
+pub enum NotePosition {
+    /// 在某个参与者左侧
+    LeftOf(String),
+    /// 在某个参与者右侧
+    RightOf(String),
+    /// 横跨多个参与者
+    Over(Vec<String>),
+}
+
+/// 序列图笔记
+#[derive(Debug, Clone, PartialEq)]
+pub struct SequenceNote {
+    /// 笔记文本
+    pub text: String,
+    /// 笔记位置
+    pub position: NotePosition,
+    /// 所在步骤索引
+    pub step: usize,
+}
+
+/// 序列图背景矩形块
+#[derive(Debug, Clone, PartialEq)]
+pub struct SequenceRect {
+    /// 背景色
+    pub color: String,
+    /// 起始步骤索引
+    pub start_step: usize,
+    /// 结束步骤索引
+    pub end_step: usize,
+}
+
+/// 序列图控制块类型
+#[derive(Debug, Clone, PartialEq)]
+pub enum ControlBlockKind {
+    /// loop
+    Loop,
+    /// alt
+    Alt,
+    /// opt
+    Opt,
+    /// par
+    Par,
+    /// critical
+    Critical,
+    /// break
+    Break,
+}
+
+/// 序列图控制块
+#[derive(Debug, Clone, PartialEq)]
+pub struct SequenceControlBlock {
+    /// 控制块类型
+    pub kind: ControlBlockKind,
+    /// 标签 (loop 条件、alt 条件等)
+    pub label: String,
+    /// 起始步骤索引
+    pub start_step: usize,
+    /// 结束步骤索引
+    pub end_step: usize,
+    /// 分组标签列表 (alt 的 else, par 的 and 等)
+    pub groups: Vec<(String, usize)>,
+}
+
+/// 序列图专用元数据
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SequenceMeta {
+    /// 有序参与者 ID 列表 (从左到右)
+    pub participant_order: Vec<String>,
+    /// 参与者别名映射 (alias → id)
+    pub aliases: std::collections::HashMap<String, String>,
+    /// 参与者类型 (id → true 表示 actor, false 表示 participant)
+    pub is_actor: std::collections::HashMap<String, bool>,
+    /// 激活记录列表
+    pub activations: Vec<SequenceActivation>,
+    /// 笔记列表
+    pub notes: Vec<SequenceNote>,
+    /// 背景矩形块列表
+    pub rects: Vec<SequenceRect>,
+    /// 控制块列表
+    pub control_blocks: Vec<SequenceControlBlock>,
+    /// 是否启用自动编号
+    pub autonumber: bool,
+    /// 消息计数 (用于自动编号)
+    pub message_counter: usize,
+    /// 总步骤数
+    pub total_steps: usize,
+}
+
 /// 图表中间表示 (AST)
 #[derive(Debug, Clone, PartialEq)]
 pub struct DiagramAst {
@@ -270,6 +373,8 @@ pub struct DiagramAst {
     pub subgraphs: Vec<Subgraph>,
     /// 图表标题
     pub title: Option<String>,
+    /// 序列图专用元数据
+    pub sequence_meta: Option<SequenceMeta>,
 }
 
 impl DiagramAst {
@@ -283,6 +388,7 @@ impl DiagramAst {
             edges: Vec::new(),
             subgraphs: Vec::new(),
             title: None,
+            sequence_meta: None,
         }
     }
 

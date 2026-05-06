@@ -6,6 +6,7 @@
 mod ranking;
 mod positioning;
 mod routing;
+pub mod sequence_layout;
 
 use std::collections::BTreeMap;
 use mermaid_canvas_core::{DiagramAst, DiagramKind, interaction::BoundingBox};
@@ -112,6 +113,9 @@ pub fn compute_layout<T: Theme>(
         | DiagramKind::Er
         | DiagramKind::Requirement
         | DiagramKind::Packet => compute_graph_layout(ast, theme, config),
+        DiagramKind::Sequence => {
+            sequence_layout::compute_sequence_layout(ast, theme, config)
+        }
         // 其他图表类型暂返回空布局
         _ => Layout {
             width: 800.0,

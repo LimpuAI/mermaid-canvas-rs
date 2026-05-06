@@ -69,3 +69,27 @@ pub fn packet_sample() -> &'static str {
     16-31 : Sequence Number
     32-47 : Acknowledgment Number"#
 }
+
+/// Sequence Diagram 示例 — 完整的序列图
+pub fn sequence_sample() -> &'static str {
+    r#"sequenceDiagram
+    participant Client
+    participant Server
+    participant Database
+
+    Client->>Server: HTTP Request
+    activate Server
+    Server->>Database: Query
+    activate Database
+    Database-->>Server: Results
+    deactivate Database
+    Server-->>Client: Response
+    deactivate Server
+
+    Note right of Server: Processing complete
+
+    loop Periodic health check
+        Client->>Server: Ping
+        Server-->>Client: Pong
+    end"#
+}

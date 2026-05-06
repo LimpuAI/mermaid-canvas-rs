@@ -35,8 +35,16 @@ fn render_with_theme<T: mermaid_canvas_component::Theme>(
     let width = layout.width;
     let height = layout.height;
 
-    let output = mermaid_canvas_component::FlowchartRenderer::render(&layout, theme)
-        .map_err(|e| e.to_string())?;
+    let output = match ast.kind {
+        mermaid_canvas_core::DiagramKind::Sequence => {
+            mermaid_canvas_component::SequenceRenderer::render(&layout, theme)
+                .map_err(|e| e.to_string())?
+        }
+        _ => {
+            mermaid_canvas_component::FlowchartRenderer::render(&layout, theme)
+                .map_err(|e| e.to_string())?
+        }
+    };
 
     Ok(diagram_output_to_wit_render_result(output, width, height))
 }
@@ -149,6 +157,27 @@ mod tests {
         let result = render("packet\n    0-7 : src", None);
         // packet diagram may or may not be fully supported; just ensure no panic
         let _ = result;
+    }
+
+    // ─── Sequence Diagram ────────────────────────────────────
+
+    #[test]
+    fn test_render_sequence_diagram() {
+        let src = "sequenceDiagram\n    participant A\n    participant B\n    A->>B: Hello\n    B-->>A: Hi";
+        let result = render(src, None)
+            .expect("sequence diagram should render");
+        assert_valid_render(&result);
+        // Should have non-zero dimensions
+        assert!(result.width > 0.0, "width should be positive");
+        assert!(result.height > 0.0, "height should be positive");
+    }
+
+    #[test]
+    fn test_render_sequence_with_theme() {
+        let src = "sequenceDiagram\n    A->>B: Test";
+        let result = render(src, Some("dark"))
+            .expect("sequence diagram with dark theme should render");
+        assert_valid_render(&result);
     }
 
     // ─── Error Handling ────────────────────────────────────

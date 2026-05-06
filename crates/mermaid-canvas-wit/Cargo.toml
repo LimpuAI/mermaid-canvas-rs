@@ -1,0 +1,17 @@
+[package]
+name = "mermaid-canvas-wit"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+mermaid-canvas-core = { path = "../mermaid-canvas-core" }
+mermaid-canvas-component = { path = "../mermaid-canvas-component" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+base64 = "0.22"
+
+[features]
+default = []

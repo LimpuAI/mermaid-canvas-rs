@@ -1,0 +1,49 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "mermaid-canvas-rs",
+  "colors": {
+    "primary": "#10b981",
+    "light": "#34d399",
+    "dark": "#059669"
+  },
+  "favicon": "/favicon.svg",
+  "navigation": {
+    "groups": [
+      {
+        "group": "概览",
+        "pages": ["introduction"]
+      },
+      {
+        "group": "架构",
+        "pages": ["architecture"]
+      },
+      {
+        "group": "图表类型",
+        "pages": ["flowchart"]
+      },
+      {
+        "group": "主题",
+        "pages": ["theming"]
+      },
+      {
+        "group": "集成",
+        "pages": ["webassembly"]
+      },
+      {
+        "group": "演示",
+        "pages": ["demo"]
+      }
+    ]
+  },
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg"
+  },
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/linktime/mermaid-canvas-rs"
+    }
+  }
+}

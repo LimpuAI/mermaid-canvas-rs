@@ -1,0 +1,14 @@
+[package]
+name = "mermaid-canvas-wit-wasm"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+mermaid-canvas-wit = { path = "../mermaid-canvas-wit", default-features = false }
+mermaid-canvas-core = { path = "../mermaid-canvas-core" }
+wit-bindgen = "0.57"
+
+[lib]
+crate-type = ["cdylib"]

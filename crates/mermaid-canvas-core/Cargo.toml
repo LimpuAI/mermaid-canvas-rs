@@ -1,0 +1,16 @@
+[package]
+name = "mermaid-canvas-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+regex = "1"
+once_cell = "1"
+
+[features]
+default = []

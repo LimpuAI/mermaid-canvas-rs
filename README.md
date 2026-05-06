@@ -23,7 +23,7 @@ Backend-agnostic Rust Mermaid diagram renderer that outputs Canvas 2D instructio
 | ER | ✅ Complete | Entities, relationships, cardinality |
 | Requirement | ✅ Complete | Requirements, constraints, relationships |
 | Packet | ✅ Complete | Packet field diagrams |
-| Sequence | 🔧 Placeholder | Coming soon |
+| Sequence | ✅ Complete | Participants, messages, activations, notes, control blocks |
 
 ## Quick Start
 

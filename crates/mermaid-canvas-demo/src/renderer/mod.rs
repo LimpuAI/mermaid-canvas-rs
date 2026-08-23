@@ -8,8 +8,16 @@ pub mod text;
 use std::path::Path;
 
 use mermaid_canvas_core::{DrawCmd, FillStyle, PathSegment, RenderLayers, StrokeStyle, TextStyle};
-use mermaid_canvas_wit::wit_types::{WitDrawCmd, WitLayer};
+use mermaid_canvas_wit::wit_types::{WitDrawCmd, WitLayer, WitPaint};
 use text::FontState;
+
+/// 提取 paint 的纯色字符串（渐变超出 tiny-skia demo 渲染器支持范围）
+fn solid_color(paint: &Option<WitPaint>) -> Option<String> {
+    match paint {
+        Some(WitPaint::Solid(c)) => Some(c.clone()),
+        _ => None,
+    }
+}
 
 /// Canvas 渲染器，将 DrawCmd 渲染到 Pixmap
 pub struct TinySkiaRenderer {
@@ -68,9 +76,9 @@ impl TinySkiaRenderer {
                     let y = params[1];
                     let w = params[2];
                     let h = params[3];
-                    let fill = cmd.fill.as_ref().map(|s| FillStyle::Color(s.clone()));
-                    let stroke = cmd.stroke.as_ref().map(|s| StrokeStyle::Color(s.clone()));
-                    self.draw_rect(x, y, w, h, &fill, &stroke, &None);
+                    let fill = solid_color(&cmd.fill).map(FillStyle::Color);
+                    let stroke = solid_color(&cmd.stroke).map(StrokeStyle::Color);
+                    self.draw_rect(x, y, w, h, &fill, &stroke, &cmd.corner_radius, cmd.stroke_width);
                 }
             }
             "circle" => {
@@ -79,16 +87,16 @@ impl TinySkiaRenderer {
                     let cx = params[0];
                     let cy = params[1];
                     let r = params[2];
-                    let fill = cmd.fill.as_ref().map(|s| FillStyle::Color(s.clone()));
-                    let stroke = cmd.stroke.as_ref().map(|s| StrokeStyle::Color(s.clone()));
-                    self.draw_circle(cx, cy, r, &fill, &stroke);
+                    let fill = solid_color(&cmd.fill).map(FillStyle::Color);
+                    let stroke = solid_color(&cmd.stroke).map(StrokeStyle::Color);
+                    self.draw_circle(cx, cy, r, &fill, &stroke, cmd.stroke_width);
                 }
             }
             "path" => {
                 let segments = decode_path_segments(&cmd.params);
-                let fill = cmd.fill.as_ref().map(|s| FillStyle::Color(s.clone()));
-                let stroke = cmd.stroke.as_ref().map(|s| StrokeStyle::Color(s.clone()));
-                self.draw_path(&segments, &fill, &stroke);
+                let fill = solid_color(&cmd.fill).map(FillStyle::Color);
+                let stroke = solid_color(&cmd.stroke).map(StrokeStyle::Color);
+                self.draw_path(&segments, &fill, &stroke, cmd.stroke_width);
             }
             "text" => {
                 let params = &cmd.params;
@@ -108,10 +116,15 @@ impl TinySkiaRenderer {
                         _ => mermaid_canvas_core::TextBaseline::Alphabetic,
                     };
                     if let Some(content) = &cmd.text_content {
-                        let fill_color = cmd.fill.as_deref().unwrap_or("#000000");
-                        let style = TextStyle::new()
+                        let fill_color = solid_color(&cmd.fill).unwrap_or_else(|| "#000000".to_string());
+                        let mut style = TextStyle::new()
                             .with_font_size(font_size)
-                            .with_fill(FillStyle::Color(fill_color.to_string()));
+                            .with_fill(FillStyle::Color(fill_color));
+                        if let Some(font) = &cmd.font {
+                            if let Some(family) = &font.family {
+                                style = style.with_font_family(family.clone());
+                            }
+                        }
                         self.draw_text(x, y, content, &style, anchor, baseline);
                     }
                 }
@@ -127,13 +140,13 @@ impl TinySkiaRenderer {
                 x, y, width, height,
                 fill, stroke, corner_radius,
             } => {
-                self.draw_rect(*x, *y, *width, *height, fill, stroke, corner_radius);
+                self.draw_rect(*x, *y, *width, *height, fill, stroke, corner_radius, None);
             }
             DrawCmd::Path { segments, fill, stroke } => {
-                self.draw_path(segments, fill, stroke);
+                self.draw_path(segments, fill, stroke, None);
             }
             DrawCmd::Circle { cx, cy, r, fill, stroke } => {
-                self.draw_circle(*cx, *cy, *r, fill, stroke);
+                self.draw_circle(*cx, *cy, *r, fill, stroke, None);
             }
             DrawCmd::Text { x, y, content, style, anchor, baseline } => {
                 self.draw_text(*x, *y, content, style, *anchor, *baseline);
@@ -154,13 +167,16 @@ impl TinySkiaRenderer {
             .map_err(|e| format!("Failed to write PNG: {}", e))
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn draw_rect(
         &mut self,
         x: f64, y: f64, w: f64, h: f64,
         fill: &Option<FillStyle>,
         stroke: &Option<StrokeStyle>,
         corner_radius: &Option<f64>,
+        stroke_width: Option<f64>,
     ) {
+        let sk_stroke = make_stroke(stroke_width);
         if let Some(radius) = corner_radius.filter(|r| *r > 0.0) {
             let mut pb = tiny_skia::PathBuilder::new();
             let r = radius.min(w / 2.0).min(h / 2.0) as f32;
@@ -191,7 +207,6 @@ impl TinySkiaRenderer {
                 }
                 if let Some(stroke_style) = stroke {
                     if let Some(paint) = self.stroke_to_paint(stroke_style) {
-                        let sk_stroke = tiny_skia::Stroke::default();
                         self.pixmap.stroke_path(
                             &path,
                             &paint,
@@ -233,7 +248,7 @@ impl TinySkiaRenderer {
                             self.pixmap.stroke_path(
                                 &path,
                                 &paint,
-                                &tiny_skia::Stroke::default(),
+                                &sk_stroke,
                                 tiny_skia::Transform::identity(),
                                 None,
                             );
@@ -249,10 +264,13 @@ impl TinySkiaRenderer {
         segments: &[PathSegment],
         fill: &Option<FillStyle>,
         stroke: &Option<StrokeStyle>,
+        stroke_width: Option<f64>,
     ) {
         if segments.is_empty() {
             return;
         }
+
+        let sk_stroke = make_stroke(stroke_width);
 
         let mut pb = tiny_skia::PathBuilder::new();
 
@@ -303,7 +321,6 @@ impl TinySkiaRenderer {
             }
             if let Some(stroke_style) = stroke {
                 if let Some(paint) = self.stroke_to_paint(stroke_style) {
-                    let sk_stroke = tiny_skia::Stroke::default();
                     self.pixmap.stroke_path(
                         &path,
                         &paint,
@@ -321,7 +338,9 @@ impl TinySkiaRenderer {
         cx: f64, cy: f64, r: f64,
         fill: &Option<FillStyle>,
         stroke: &Option<StrokeStyle>,
+        stroke_width: Option<f64>,
     ) {
+        let sk_stroke = make_stroke(stroke_width);
         let path = tiny_skia::PathBuilder::from_circle(
             cx as f32, cy as f32, r as f32,
         );
@@ -340,7 +359,6 @@ impl TinySkiaRenderer {
             }
             if let Some(stroke_style) = stroke {
                 if let Some(paint) = self.stroke_to_paint(stroke_style) {
-                    let sk_stroke = tiny_skia::Stroke::default();
                     self.pixmap.stroke_path(
                         &path,
                         &paint,
@@ -482,6 +500,14 @@ mod tests {
         // 需要检查像素是否有变化（可能因为抗锯齿而不是纯黑）
         let _ = pixel;
     }
+}
+
+fn make_stroke(width: Option<f64>) -> tiny_skia::Stroke {
+    let mut stroke = tiny_skia::Stroke::default();
+    if let Some(w) = width {
+        stroke.width = w as f32;
+    }
+    stroke
 }
 
 /// 从 params 数组解码 PathSegment

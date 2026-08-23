@@ -27,7 +27,7 @@ Backend-agnostic Rust Mermaid diagram renderer that outputs Canvas 2D instructio
 
 ## Quick Start
 
-**Native path:**
+**Native path (one-shot, backward compatible):**
 
 ```rust
 use mermaid_canvas_wit;
@@ -42,10 +42,27 @@ let result = mermaid_canvas_wit::render(
 // result.layers contains WitDrawCmd — render with any Canvas 2D backend
 ```
 
-**WASM Component:**
+**Native path (v2 stateful session):**
+
+```rust
+use mermaid_canvas_wit::session::DiagramSession;
+use mermaid_canvas_wit::wit_types::WitDiagramOptions;
+
+let mut session = DiagramSession::new(
+    "flowchart TD\n    A --> B".to_string(),
+    Some(WitDiagramOptions { theme: Some("dark".into()), ..Default::default() }),
+);
+let steady = session.render(1.0)?;      // t=1 exact steady state
+let enter = session.render(0.3)?;       // Tier 1 enter phase (fade+grow stagger)
+let regions = session.hit_regions();    // AABB + node-id (host-side hit test)
+session.update_source("flowchart LR\n    X --> Y".to_string())?;  // re-parse + replay enter
+session.resize(400.0, 0.0);             // fit-to-width (shrink only)
+```
+
+**WASM Component (v2 resource session):**
 
 ```bash
-# Build WASI Component (~1.7MB release)
+# Build WASI Component (~1.8MB release)
 cargo build -p mermaid-canvas-wit-wasm --target wasm32-wasip2 --release
 
 # Run demo with WASM path
@@ -110,10 +127,10 @@ cargo run --bin demo-themes -- --output ./themes
 │  Host Application                                   │
 │    ┌──────────────┐         ┌──────────────────┐    │
 │    │ Direct Path  │         │   WASM Path      │    │
-│    │ wit::render()│         │ wasmtime Host    │    │
-│    └──────┬───────┘         └────────┬─────────┘    │
-│           │                          │               │
-│           ▼                          ▼               │
+│    │DiagramSession│         │ wasmtime Host    │    │
+│    └──────┬───────┘         └───────┬──────────┘    │
+│           │                        │ mermaid:viz@2.0.0
+│           ▼                        ▼ resource session
 │    DrawCmd (native)    WitDrawCmd (WASM boundary)    │
 │           │                          │               │
 │           └──────────┬───────────────┘               │
@@ -123,13 +140,30 @@ cargo run --bin demo-themes -- --output ./themes
 └─────────────────────────────────────────────────────┘
 ```
 
+## WIT Protocol (v2 — resource session)
+
+The component exports `mermaid:viz@2.0.0/diagram-renderer` with a stateful
+`diagram` resource (constructor + six methods), using the shared
+`echodawn:canvas@1.0.0/draw` vocabulary for lossless draw commands
+(corner-radius / font-desc / paint incl. linear gradients / anim-desc channel):
+
+| Method | Semantics |
+|--------|-----------|
+| `constructor(source, opts)` | parse + layout; parse errors surface at `render` |
+| `update-source(source)` | re-parse + re-layout + replay enter phase |
+| `resize(width, height)` | fit-to-width constraint (shrink only; diagram size is content-adaptive) |
+| `set-state(state)` | hover brighten / selected outline (immediate) |
+| `set-theme(theme)` | apply theme record (6 semantic color slots via `shape_slot`) |
+| `render(t)` | Tier 1 semantic phase: `t=1` exact steady state; `t∈[0,1)` enter stagger (nodes fade+grow, edges/labels fade); `disable` renders steady at any `t` |
+| `hit-regions()` | node AABBs with node-id payload (host-side hit test, zero wasm calls) |
+
 ## Build & Test
 
 ```bash
 # Build
 cargo build --workspace
 
-# Test (180 tests)
+# Test (263 tests)
 cargo test --workspace
 
 # Build WASM component
@@ -138,6 +172,7 @@ cargo build -p mermaid-canvas-wit-wasm --target wasm32-wasip2 --release
 # Lint
 cargo clippy --workspace
 ```
+
 
 ## License
 

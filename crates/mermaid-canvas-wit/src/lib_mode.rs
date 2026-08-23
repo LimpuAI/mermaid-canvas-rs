@@ -1,78 +1,44 @@
-//! 库调用模式 API
+//! 库调用模式 API（v2：经 DiagramSession 的向后兼容单发入口）
 
-use super::wit_types::*;
-use super::convert::*;
+use crate::session::DiagramSession;
+use crate::wit_types::*;
 
-/// 渲染 Mermaid 源码为 Canvas 2D 指令
+/// 渲染 Mermaid 源码为 Canvas 2D 指令（单发语义 — 内部建立会话渲染 t=1 稳态）
 ///
 /// `theme` 可选值: `"default"`, `"dark"`, `"forest"`, `"nordic"`, `"cappuccino"`,
 /// `None` 等同 `"default"`
 pub fn render(source: &str, theme: Option<&str>) -> Result<WitRenderResult, String> {
-    // 1. core: 解析 Mermaid 源码 → DiagramAst
-    let ast = mermaid_canvas_core::parse_mermaid(source)
-        .map_err(|e| e.to_string())?;
-
-    // 2. 选择主题并分发（泛型需要编译期确定具体类型）
-    let theme_name = theme.unwrap_or("default");
-    let config = mermaid_canvas_component::LayoutConfig::default();
-
-    match theme_name {
-        "dark" => render_with_theme(&ast, &mermaid_canvas_component::DarkTheme, &config),
-        "forest" => render_with_theme(&ast, &mermaid_canvas_component::ForestTheme, &config),
-        "nordic" => render_with_theme(&ast, &mermaid_canvas_component::NordicTheme, &config),
-        "cappuccino" => render_with_theme(&ast, &mermaid_canvas_component::CappuccinoTheme, &config),
-        _ => render_with_theme(&ast, &mermaid_canvas_component::DefaultTheme, &config),
-    }
-}
-
-/// 带具体主题类型的渲染
-fn render_with_theme<T: mermaid_canvas_component::Theme>(
-    ast: &mermaid_canvas_core::DiagramAst,
-    theme: &T,
-    config: &mermaid_canvas_component::LayoutConfig,
-) -> Result<WitRenderResult, String> {
-    let layout = mermaid_canvas_component::compute_layout(ast, theme, config);
-    let width = layout.width;
-    let height = layout.height;
-
-    let output = match ast.kind {
-        mermaid_canvas_core::DiagramKind::Sequence => {
-            mermaid_canvas_component::SequenceRenderer::render(&layout, theme)
-                .map_err(|e| e.to_string())?
-        }
-        _ => {
-            mermaid_canvas_component::FlowchartRenderer::render(&layout, theme)
-                .map_err(|e| e.to_string())?
-        }
+    let opts = WitDiagramOptions {
+        width: None,
+        theme: theme.map(str::to_string),
+        animation: None,
     };
-
-    Ok(diagram_output_to_wit_render_result(output, width, height))
+    let mut session = DiagramSession::new(source.to_string(), Some(opts));
+    session.render(1.0)
 }
 
-/// DiagramOutput 转换为 WitRenderResult
-fn diagram_output_to_wit_render_result(
-    output: mermaid_canvas_component::DiagramOutput,
-    width: f64,
-    height: f64,
-) -> WitRenderResult {
-    let layers: Vec<WitLayer> = output.layers.all()
-        .iter()
-        .map(|layer| layer_to_wit_layer(layer.clone()))
-        .collect();
-
-    WitRenderResult { layers, width, height }
+/// 命中区列表（v2：会话方法替代 v1 的 render-result 内嵌区域；宿主侧 AABB 命中）
+pub fn hit_regions(source: &str, theme: Option<&str>) -> Result<Vec<WitHitRegion>, String> {
+    let opts = WitDiagramOptions {
+        width: None,
+        theme: theme.map(str::to_string),
+        animation: None,
+    };
+    let mut session = DiagramSession::new(source.to_string(), Some(opts));
+    if let Some(e) = session.parse_error() {
+        return Err(e.to_string());
+    }
+    Ok(session.hit_regions())
 }
 
-/// 命中测试
-pub fn hit_test(result: &WitRenderResult, x: f64, y: f64, tolerance: f64) -> Option<u32> {
-    for layer in &result.layers {
-        for region in &layer.hit_regions {
-            let bounds = mermaid_canvas_core::BoundingBox::new(
-                region.bounds_x, region.bounds_y, region.bounds_w, region.bounds_h,
-            );
-            if bounds.expand(tolerance).contains(x, y) {
-                return Some(region.index);
-            }
+/// 宿主侧 AABB 命中测试（零 wasm 调用路径的参考实现）
+pub fn hit_test(regions: &[WitHitRegion], x: f64, y: f64, tolerance: f64) -> Option<u32> {
+    for region in regions {
+        let bounds = mermaid_canvas_core::BoundingBox::new(
+            region.bounds_x, region.bounds_y, region.bounds_w, region.bounds_h,
+        );
+        if bounds.expand(tolerance).contains(x, y) {
+            return Some(region.index);
         }
     }
     None
@@ -208,7 +174,7 @@ mod tests {
     fn test_render_wit_draw_cmd_types_are_valid() {
         let result = render("flowchart TD\n    A --> B", None)
             .expect("should render");
-        let valid_types = ["rect", "circle", "path", "text", "group"];
+        let valid_types = ["rect", "circle", "path", "text"];
         for layer in &result.layers {
             for cmd in &layer.commands {
                 assert!(
@@ -230,12 +196,21 @@ mod tests {
         assert!(!json.unwrap().is_empty());
     }
 
+    // ─── 命中区（v2 会话）──────────────────────────────────
+
     #[test]
-    fn test_hit_test_empty_regions() {
-        let result = render("flowchart TD\n    A --> B", None)
-            .expect("should render");
-        // No hit regions are populated by default
-        let hit = hit_test(&result, 0.0, 0.0, 10.0);
-        assert!(hit.is_none(), "no hit regions → should return None");
+    fn test_hit_regions_and_host_side_hit_test() {
+        let src = "flowchart TD\n    A[Alpha] --> B[Beta]";
+        let regions = hit_regions(src, None).expect("hit regions");
+        assert_eq!(regions.len(), 2);
+        assert_eq!(regions[0].node_id.as_deref(), Some("A"));
+
+        // 宿主侧 AABB：命中 A 的包围盒中心
+        let hit = hit_test(&regions, regions[0].bounds_x + regions[0].bounds_w / 2.0,
+                           regions[0].bounds_y + regions[0].bounds_h / 2.0, 0.0);
+        assert_eq!(hit, Some(0));
+
+        // 远处未命中
+        assert_eq!(hit_test(&regions, -1000.0, -1000.0, 10.0), None);
     }
 }

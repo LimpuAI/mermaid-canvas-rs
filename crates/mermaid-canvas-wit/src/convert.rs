@@ -1,10 +1,11 @@
-//! 类型转换层 — WIT types ↔ internal types
+//! 类型转换层 — WIT types ↔ internal types（v2：无损投影）
 
 use super::wit_types::*;
+use mermaid_canvas_component::{ThemeRecord, Layout};
 use mermaid_canvas_core::{
-    DiagramAst, DiagramNode, DiagramEdge, DiagramKind, Direction, NodeShape,
+    DiagramKind, Direction,
     DrawCmd, LayerKind, Layer,
-    style::FillStyle,
+    style::{FillStyle, StrokeStyle, TextStyle, FontWeight, FontStyle},
 };
 
 /// 转换错误
@@ -98,42 +99,92 @@ pub fn direction_to_str(dir: Direction) -> String {
     }
 }
 
-/// 内部 DrawCmd 转换为展平的 WIT DrawCmd 列表
+/// FillStyle → WIT paint（无损：Color → Solid，线性 Gradient → Gradient；
+/// 径向渐变超出共享词汇表 → None）
+pub fn fill_style_to_paint(fill: FillStyle) -> Option<WitPaint> {
+    match fill {
+        FillStyle::Color(c) => Some(WitPaint::Solid(c)),
+        FillStyle::Gradient(g) => match g.kind {
+            mermaid_canvas_core::GradientKind::Linear { x0, y0, x1, y1 } =>
+                Some(WitPaint::Gradient(WitLinearGradient {
+                    x0, y0, x1, y1,
+                    stops: g.stops.into_iter()
+                        .map(|s| WitGradientStop { pos: s.offset, color: s.color })
+                        .collect(),
+                })),
+            mermaid_canvas_core::GradientKind::Radial { .. } => None,
+        },
+        FillStyle::None => None,
+    }
+}
+
+/// StrokeStyle → WIT paint
+pub fn stroke_style_to_paint(stroke: StrokeStyle) -> Option<WitPaint> {
+    match stroke {
+        StrokeStyle::Color(c) => Some(WitPaint::Solid(c)),
+        StrokeStyle::None => None,
+    }
+}
+
+/// TextStyle → WIT font-desc（Bold ≙ 700 为 CSS 标准等价）
+pub fn text_style_to_font_desc(style: &TextStyle) -> WitFontDesc {
+    WitFontDesc {
+        family: Some(style.font_family.clone()),
+        weight: match style.font_weight {
+            FontWeight::Normal => None,
+            FontWeight::Bold => Some(700),
+            FontWeight::Number(n) => Some(n),
+        },
+        italic: matches!(style.font_style, FontStyle::Italic),
+    }
+}
+
+/// 内部 DrawCmd 转换为展平的 WIT DrawCmd 列表（v2 无损：corner-radius/font/paint 全量过 ABI）
 pub fn draw_cmd_to_wit_draw_cmd_flat(cmd: DrawCmd, depth: u32) -> Vec<WitDrawCmd> {
     match cmd {
-        DrawCmd::Rect { x, y, width, height, fill, stroke, corner_radius: _ } => {
+        DrawCmd::Rect { x, y, width, height, fill, stroke, corner_radius } => {
             vec![WitDrawCmd {
                 cmd_type: "rect".to_string(),
                 params: vec![x, y, width, height],
-                fill: fill.and_then(|f| match f { FillStyle::Color(c) => Some(c), _ => None }),
-                stroke: stroke.and_then(|s| match s { mermaid_canvas_core::StrokeStyle::Color(c) => Some(c), _ => None }),
+                fill: fill.and_then(fill_style_to_paint),
+                stroke: stroke.and_then(stroke_style_to_paint),
                 stroke_width: None,
+                corner_radius,
                 text_content: None,
+                font: None,
                 group_depth: depth,
+                anim: None,
             }]
         }
         DrawCmd::Circle { cx, cy, r, fill, stroke } => {
             vec![WitDrawCmd {
                 cmd_type: "circle".to_string(),
                 params: vec![cx, cy, r],
-                fill: fill.and_then(|f| match f { FillStyle::Color(c) => Some(c), _ => None }),
-                stroke: stroke.and_then(|s| match s { mermaid_canvas_core::StrokeStyle::Color(c) => Some(c), _ => None }),
+                fill: fill.and_then(fill_style_to_paint),
+                stroke: stroke.and_then(stroke_style_to_paint),
                 stroke_width: None,
+                corner_radius: None,
                 text_content: None,
+                font: None,
                 group_depth: depth,
+                anim: None,
             }]
         }
         DrawCmd::Text { x, y, content, style, anchor, baseline } => {
             let anchor_code = match anchor { mermaid_canvas_core::TextAnchor::Start => 0.0, mermaid_canvas_core::TextAnchor::Middle => 1.0, mermaid_canvas_core::TextAnchor::End => 2.0 };
             let baseline_code = match baseline { mermaid_canvas_core::TextBaseline::Top => 0.0, mermaid_canvas_core::TextBaseline::Middle => 1.0, mermaid_canvas_core::TextBaseline::Bottom => 2.0, mermaid_canvas_core::TextBaseline::Alphabetic => 3.0 };
+            let font = text_style_to_font_desc(&style);
             vec![WitDrawCmd {
                 cmd_type: "text".to_string(),
                 params: vec![x, y, style.font_size, anchor_code, baseline_code],
-                fill: Some(match style.fill { FillStyle::Color(c) => c, _ => "#000".to_string() }),
+                fill: fill_style_to_paint(style.fill),
                 stroke: None,
                 stroke_width: None,
+                corner_radius: None,
                 text_content: Some(content),
+                font: Some(font),
                 group_depth: depth,
+                anim: None,
             }]
         }
         DrawCmd::Path { segments, fill, stroke } => {
@@ -154,11 +205,14 @@ pub fn draw_cmd_to_wit_draw_cmd_flat(cmd: DrawCmd, depth: u32) -> Vec<WitDrawCmd
             vec![WitDrawCmd {
                 cmd_type: "path".to_string(),
                 params,
-                fill: fill.and_then(|f| match f { FillStyle::Color(c) => Some(c), _ => None }),
-                stroke: stroke.and_then(|s| match s { mermaid_canvas_core::StrokeStyle::Color(c) => Some(c), _ => None }),
+                fill: fill.and_then(fill_style_to_paint),
+                stroke: stroke.and_then(stroke_style_to_paint),
                 stroke_width: None,
+                corner_radius: None,
                 text_content: None,
+                font: None,
                 group_depth: depth,
+                anim: None,
             }]
         }
         DrawCmd::Group { label: _, items } => {
@@ -190,8 +244,59 @@ pub fn layer_to_wit_layer(layer: Layer) -> WitLayer {
         dirty: layer.dirty,
         z_index: layer.z_index,
         commands,
-        hit_regions: Vec::new(),
     }
+}
+
+/// WIT diagram-theme record → 内部 ThemeRecord
+pub fn wit_theme_to_record(theme: WitDiagramTheme) -> ThemeRecord {
+    ThemeRecord {
+        background: theme.background,
+        foreground: theme.foreground,
+        edge_color: theme.edge_color,
+        edge_label_background: theme.edge_label_background,
+        node_colors: theme.node_colors,
+        node_stroke: theme.node_stroke,
+        title_color: theme.title_color,
+        font_family: theme.font_family,
+        base_font_size: theme.base_font_size,
+        title_font_size: theme.title_font_size,
+        margin: theme.margin.into(),
+    }
+}
+
+/// 内部 ThemeRecord → WIT diagram-theme record
+pub fn record_to_wit_theme(record: ThemeRecord) -> WitDiagramTheme {
+    WitDiagramTheme {
+        background: record.background,
+        foreground: record.foreground,
+        edge_color: record.edge_color,
+        edge_label_background: record.edge_label_background,
+        node_colors: record.node_colors,
+        node_stroke: record.node_stroke,
+        title_color: record.title_color,
+        font_family: record.font_family,
+        base_font_size: record.base_font_size,
+        title_font_size: record.title_font_size,
+        margin: record.margin.into(),
+    }
+}
+
+/// Layout 节点 → 命中区列表（按 BTreeMap key 过滤序列图激活框等内部节点；
+/// key 序 = 稳定索引）
+pub fn layout_to_hit_regions(layout: &Layout) -> Vec<WitHitRegion> {
+    layout.nodes
+        .iter()
+        .filter(|(key, _)| !key.starts_with("__act_"))
+        .enumerate()
+        .map(|(i, (_, nl))| WitHitRegion {
+            index: i as u32,
+            node_id: Some(nl.id.clone()),
+            bounds_x: nl.bounds.x,
+            bounds_y: nl.bounds.y,
+            bounds_w: nl.bounds.width,
+            bounds_h: nl.bounds.height,
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -203,6 +308,7 @@ mod tests {
         DiagramKind, Direction,
         RenderOutput,
     };
+    use mermaid_canvas_component::{builtin_theme_record, Margin};
 
     // ─── DrawCmd::Rect ──────────────────────────────────────
 
@@ -219,10 +325,24 @@ mod tests {
         let w = &result[0];
         assert_eq!(w.cmd_type, "rect");
         assert_eq!(w.params, vec![10.0, 20.0, 100.0, 50.0]);
-        assert_eq!(w.fill.as_deref(), Some("#ff0000"));
-        assert_eq!(w.stroke.as_deref(), Some("#000000"));
+        assert_eq!(w.fill, Some(WitPaint::Solid("#ff0000".to_string())));
+        assert_eq!(w.stroke, Some(WitPaint::Solid("#000000".to_string())));
         assert!(w.text_content.is_none());
+        assert!(w.anim.is_none());
         assert_eq!(w.group_depth, 0);
+    }
+
+    #[test]
+    fn test_rect_corner_radius_lossless() {
+        let cmd = DrawCmd::Rect {
+            x: 0.0, y: 0.0, width: 80.0, height: 40.0,
+            fill: Some(FillStyle::Color("#fff".into())),
+            stroke: None,
+            corner_radius: Some(8.0),
+        };
+        let result = draw_cmd_to_wit_draw_cmd_flat(cmd, 0);
+        // v2 无损：corner_radius 过 ABI（v1 丢弃）
+        assert_eq!(result[0].corner_radius, Some(8.0));
     }
 
     #[test]
@@ -234,7 +354,6 @@ mod tests {
         let result = draw_cmd_to_wit_draw_cmd_flat(cmd, 2);
         assert_eq!(result.len(), 1);
         let w = &result[0];
-        assert_eq!(w.cmd_type, "rect");
         assert!(w.fill.is_none());
         assert!(w.stroke.is_none());
         assert_eq!(w.group_depth, 2);
@@ -276,8 +395,8 @@ mod tests {
         let w = &result[0];
         assert_eq!(w.cmd_type, "circle");
         assert_eq!(w.params, vec![50.0, 60.0, 25.0]);
-        assert_eq!(w.fill.as_deref(), Some("#00ff00"));
-        assert_eq!(w.stroke.as_deref(), Some("#111"));
+        assert_eq!(w.fill, Some(WitPaint::Solid("#00ff00".to_string())));
+        assert_eq!(w.stroke, Some(WitPaint::Solid("#111".to_string())));
     }
 
     #[test]
@@ -352,6 +471,42 @@ mod tests {
         assert_eq!(result[0].params[4], 3.0); // Alphabetic baseline
     }
 
+    #[test]
+    fn test_text_font_desc_lossless() {
+        let style = TextStyle::new()
+            .with_font_family("Serif")
+            .with_font_size(14.0);
+        let cmd = DrawCmd::Text {
+            x: 0.0, y: 0.0, content: "t".into(),
+            style, anchor: TextAnchor::Start, baseline: TextBaseline::Top,
+        };
+        let result = draw_cmd_to_wit_draw_cmd_flat(cmd, 0);
+        let font = result[0].font.as_ref().expect("text cmd must carry font-desc");
+        assert_eq!(font.family.as_deref(), Some("Serif"));
+        assert_eq!(font.weight, None);
+        assert!(!font.italic);
+
+        // Bold ≙ 700
+        let mut style = TextStyle::new();
+        style.font_weight = FontWeight::Bold;
+        let cmd = DrawCmd::Text {
+            x: 0.0, y: 0.0, content: "t".into(),
+            style, anchor: TextAnchor::Start, baseline: TextBaseline::Top,
+        };
+        let result = draw_cmd_to_wit_draw_cmd_flat(cmd, 0);
+        assert_eq!(result[0].font.as_ref().unwrap().weight, Some(700));
+
+        // Italic
+        let mut style = TextStyle::new();
+        style.font_style = FontStyle::Italic;
+        let cmd = DrawCmd::Text {
+            x: 0.0, y: 0.0, content: "t".into(),
+            style, anchor: TextAnchor::Start, baseline: TextBaseline::Top,
+        };
+        let result = draw_cmd_to_wit_draw_cmd_flat(cmd, 0);
+        assert!(result[0].font.as_ref().unwrap().italic);
+    }
+
     // ─── DrawCmd::Path ──────────────────────────────────────
 
     #[test]
@@ -384,7 +539,7 @@ mod tests {
         assert_eq!(w.cmd_type, "path");
         // MoveTo(0,0) → [0, 0, 0], LineTo(100,0) → [1, 100, 0], LineTo(100,100) → [1, 100, 100], Close → [5]
         assert_eq!(w.params, vec![0.0, 0.0, 0.0, 1.0, 100.0, 0.0, 1.0, 100.0, 100.0, 5.0]);
-        assert_eq!(w.fill.as_deref(), Some("#fff"));
+        assert_eq!(w.fill, Some(WitPaint::Solid("#fff".to_string())));
     }
 
     #[test]
@@ -400,7 +555,7 @@ mod tests {
         assert_eq!(result.len(), 1);
         // MoveTo → [0, 0, 0], BezierTo → [2, 10, 10, 20, 20, 30, 30]
         assert_eq!(result[0].params, vec![0.0, 0.0, 0.0, 2.0, 10.0, 10.0, 20.0, 20.0, 30.0, 30.0]);
-        assert_eq!(result[0].stroke.as_deref(), Some("#333"));
+        assert_eq!(result[0].stroke, Some(WitPaint::Solid("#333".to_string())));
     }
 
     #[test]
@@ -483,6 +638,51 @@ mod tests {
         };
         let result = draw_cmd_to_wit_draw_cmd_flat(cmd, 5);
         assert!(result.is_empty());
+    }
+
+    // ─── Gradient paint（v2 无损）────────────────────────────
+
+    #[test]
+    fn test_rect_gradient_fill_lossless() {
+        let gradient = FillStyle::Gradient(mermaid_canvas_core::Gradient {
+            kind: mermaid_canvas_core::GradientKind::Linear {
+                x0: 0.0, y0: 0.0, x1: 100.0, y1: 0.0,
+            },
+            stops: vec![
+                mermaid_canvas_core::GradientStop::new(0.0, "#ffffff"),
+                mermaid_canvas_core::GradientStop::new(1.0, "#000000"),
+            ],
+        });
+        let cmd = DrawCmd::Rect {
+            x: 0.0, y: 0.0, width: 10.0, height: 10.0,
+            fill: Some(gradient), stroke: None, corner_radius: None,
+        };
+        let result = draw_cmd_to_wit_draw_cmd_flat(cmd, 0);
+        assert_eq!(result.len(), 1);
+        // v2 无损：线性渐变完整过 ABI（v1 丢弃为 None）
+        match &result[0].fill {
+            Some(WitPaint::Gradient(g)) => {
+                assert_eq!((g.x0, g.y0, g.x1, g.y1), (0.0, 0.0, 100.0, 0.0));
+                assert_eq!(g.stops.len(), 2);
+                assert_eq!(g.stops[0].pos, 0.0);
+                assert_eq!(g.stops[0].color, "#ffffff");
+                assert_eq!(g.stops[1].pos, 1.0);
+                assert_eq!(g.stops[1].color, "#000000");
+            }
+            other => panic!("expected gradient paint, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_circle_none_stroke_becomes_none() {
+        let stroke = StrokeStyle::None;
+        let cmd = DrawCmd::Circle {
+            cx: 0.0, cy: 0.0, r: 5.0,
+            fill: Some(FillStyle::None), stroke: Some(stroke),
+        };
+        let result = draw_cmd_to_wit_draw_cmd_flat(cmd, 0);
+        assert!(result[0].fill.is_none());
+        assert!(result[0].stroke.is_none());
     }
 
     // ─── LayerKind ↔ str ───────────────────────────────────
@@ -578,7 +778,6 @@ mod tests {
         assert_eq!(wit.z_index, 3);
         assert_eq!(wit.commands.len(), 1);
         assert_eq!(wit.commands[0].cmd_type, "rect");
-        assert!(wit.hit_regions.is_empty());
     }
 
     #[test]
@@ -608,35 +807,33 @@ mod tests {
         assert_eq!(wit.commands[1].group_depth, 1);
     }
 
-    // ─── Gradient fill ignored in conversion ───────────────
+    // ─── diagram-theme record ↔ ThemeRecord ─────────────────
 
     #[test]
-    fn test_rect_gradient_fill_becomes_none() {
-        let gradient = FillStyle::Gradient(mermaid_canvas_core::Gradient {
-            kind: mermaid_canvas_core::GradientKind::Linear {
-                x0: 0.0, y0: 0.0, x1: 100.0, y1: 0.0,
-            },
-            stops: vec![mermaid_canvas_core::GradientStop::new(0.0, "#fff")],
-        });
-        let cmd = DrawCmd::Rect {
-            x: 0.0, y: 0.0, width: 10.0, height: 10.0,
-            fill: Some(gradient), stroke: None, corner_radius: None,
+    fn test_wit_theme_record_roundtrip() {
+        let wit = WitDiagramTheme {
+            background: "#101010".into(),
+            foreground: "#eeeeee".into(),
+            edge_color: "#555555".into(),
+            edge_label_background: "#101010".into(),
+            node_colors: vec!["#1".into(); 6],
+            node_stroke: "#999999".into(),
+            title_color: "#ffffff".into(),
+            font_family: "Mono".into(),
+            base_font_size: 13.0,
+            title_font_size: 17.0,
+            margin: WitMargin { top: 1.0, right: 2.0, bottom: 3.0, left: 4.0 },
         };
-        let result = draw_cmd_to_wit_draw_cmd_flat(cmd, 0);
-        assert_eq!(result.len(), 1);
-        // Gradient fill is not a Color variant → becomes None in WitDrawCmd
-        assert!(result[0].fill.is_none());
+        let record = wit_theme_to_record(wit.clone());
+        let back = record_to_wit_theme(record);
+        assert_eq!(back, wit);
     }
 
     #[test]
-    fn test_circle_gradient_stroke_becomes_none() {
-        let stroke = StrokeStyle::None;
-        let cmd = DrawCmd::Circle {
-            cx: 0.0, cy: 0.0, r: 5.0,
-            fill: Some(FillStyle::None), stroke: Some(stroke),
-        };
-        let result = draw_cmd_to_wit_draw_cmd_flat(cmd, 0);
-        assert!(result[0].fill.is_none());
-        assert!(result[0].stroke.is_none());
+    fn test_builtin_record_to_wit_theme_has_six_slots() {
+        let wit = record_to_wit_theme(builtin_theme_record("forest").unwrap());
+        assert_eq!(wit.node_colors.len(), 6);
+        assert_eq!(wit.background, "#1b2a1b");
+        assert_eq!(wit.margin, WitMargin::from(Margin::all(20.0)));
     }
 }

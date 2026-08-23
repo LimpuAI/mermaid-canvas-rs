@@ -1,71 +1,52 @@
-/// mermaid-canvas WIT world definition
-package mermaid-canvas:viz;
-
-interface diagram-parser {
-    record diagram-node {
-        id: string,
-        label: string,
-        shape: string,
-        fill: option<string>,
-        stroke: option<string>,
-    }
-
-    record diagram-edge {
-        source: string,
-        target: string,
-        label: option<string>,
-        directed: bool,
-    }
-
-    record diagram-ast {
-        kind: string,
-        direction: string,
-        nodes: list<diagram-node>,
-        edges: list<diagram-edge>,
-        title: option<string>,
-    }
-
-    parse: func(source: string) -> result<diagram-ast, string>;
-}
+package mermaid:viz@2.0.0;
 
 interface diagram-renderer {
-    record draw-cmd {
-        cmd-type: string,
-        params: list<f64>,
-        fill: option<string>,
-        stroke: option<string>,
-        stroke-width: option<f64>,
-        text-content: option<string>,
-        group-depth: u32,
+    use echodawn:canvas/draw@1.0.0.{draw-cmd, layer, anim-desc};
+
+    record margin { top: f64, right: f64, bottom: f64, left: f64 }
+
+    /// 主题注入（DesignTokens 模式感知派生；6 语义色槽 = mermaid shape_slot 体系）
+    record diagram-theme {
+        background: string,
+        foreground: string,
+        edge-color: string,
+        edge-label-background: string,
+        node-colors: list<string>,   // 6 项，按 shape→slot 映射（primary/secondary/accent/info/data/special）
+        node-stroke: string,
+        title-color: string,
+        font-family: string,
+        base-font-size: f64,
+        title-font-size: f64,
+        margin: margin,
     }
 
-    record hit-region {
-        index: u32,
-        bounds-x: f64,
-        bounds-y: f64,
-        bounds-w: f64,
-        bounds-h: f64,
+    record interaction-state { hovered: option<u32>, selected: list<u32> }
+    record animation-config {       // 入场编排（对齐 deneb 语义：stagger/easing/disable）
+        enter-duration-ms: option<u32>,
+        stagger-ms: option<f64>,
+        easing: option<string>,
+        disable: bool,
     }
+    record diagram-options { width: option<f64>, theme: option<string>, animation: option<animation-config> }
 
-    record layer {
-        kind: string,
-        dirty: bool,
-        z-index: u32,
-        commands: list<draw-cmd>,
-        hit-regions: list<hit-region>,
+    /// 内容自适应尺寸（与 deneb render-result 的域差异：图表尺寸先验，图尺寸后验）
+    record render-result { layers: list<layer>, width: f64, height: f64 }
+
+    /// 命中区：payload = 节点 id（宿主 tooltip 用；对照 deneb 的 datum 数据行）
+    record hit-region { index: u32, node-id: option<string>, bounds-x: f64, bounds-y: f64, bounds-w: f64, bounds-h: f64 }
+
+    /// 有状态会话——形状对齐 deneb v2（构造 + 六方法），语义域化
+    resource diagram {
+        constructor(source: string, opts: option<diagram-options>);
+        update-source: func(source: string) -> result<_, string>;   // ↔ deneb update-data
+        resize: func(width: f64, height: f64);
+        set-state: func(state: interaction-state);                  // hover/选中回注
+        set-theme: func(theme: diagram-theme);
+        render: func(t: f64) -> result<render-result, string>;      // Tier 1 语义动画相位
+        hit-regions: func() -> list<hit-region>;                    // 宿主侧 AABB，零 wasm 调用
     }
-
-    record render-result {
-        layers: list<layer>,
-        width: f64,
-        height: f64,
-    }
-
-    render: func(source: string, theme: option<string>) -> result<render-result, string>;
-    hit-test: func(render-data: render-result, x: f64, y: f64, tolerance: f64) -> option<u32>;
 }
 
 world mermaid-canvas-viz {
-    export diagram-parser;
     export diagram-renderer;
 }

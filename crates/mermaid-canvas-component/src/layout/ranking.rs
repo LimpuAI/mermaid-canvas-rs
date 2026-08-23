@@ -68,6 +68,11 @@ pub fn assign_ranks(ast: &DiagramAst) -> (Vec<Vec<String>>, HashMap<String, usiz
 
     // BFS to assign ranks — use longest path from sources
     let mut processed: HashSet<&str> = HashSet::new();
+    // 环兜底:重入队计数。前驱未全定秩而重入队的节点,超过节点总数次后
+    // 视为环成员(如状态图 Ready→Transition→Ready),按已定秩前驱强制定秩,
+    // 保证终止;否则 BFS 在环上互相等待、无限重入队(挂死)。
+    let mut requeues: HashMap<&str, usize> = HashMap::new();
+    let requeue_cap = node_ids.len();
     while let Some(node) = queue.pop_front() {
         if processed.contains(node) {
             continue;
@@ -79,9 +84,14 @@ pub fn assign_ranks(ast: &DiagramAst) -> (Vec<Vec<String>>, HashMap<String, usiz
             .unwrap_or(true);
 
         if !preds_done && !rank_map.contains_key(node) {
-            // Re-queue for later
-            queue.push_back(node);
-            continue;
+            let rq = requeues.entry(node).or_insert(0);
+            *rq += 1;
+            if *rq <= requeue_cap {
+                // Re-queue for later
+                queue.push_back(node);
+                continue;
+            }
+            // 超限:环成员,强制定秩(fall through)
         }
 
         processed.insert(node);
@@ -102,20 +112,13 @@ pub fn assign_ranks(ast: &DiagramAst) -> (Vec<Vec<String>>, HashMap<String, usiz
         // Process successors
         if let Some(succs) = successors.get(node) {
             for &succ in succs {
-                let current_rank = rank_map.get(succ).copied().unwrap_or(usize::MAX);
-                let new_rank = rank_map[node] + 1;
-                if new_rank < current_rank {
-                    // This shouldn't happen in DAG, but handle gracefully
-                }
-                if current_rank == usize::MAX {
+                // 仅未定秩后继入队。已定秩后继不做 longest-path 提升:
+                // needed = rank[from]+1 > rank[to] 仅当 rank[to] ≤ rank[from],
+                // 即环打破后的回边 — 提升会把环成员秩反转(状态图 Transition→Ready
+                // 把 Ready 推到 Transition 之下,前向边 Loading→Ready 跨 band
+                // 穿过 Transition,边标签中点落进节点框)。回边由 routing 环绕绘制。
+                if !rank_map.contains_key(succ) {
                     queue.push_back(succ);
-                } else {
-                    // Already ranked; might need to update for longest path
-                    let succ_rank = rank_map.get(succ).copied().unwrap_or(0);
-                    let needed_rank = rank_map[node] + 1;
-                    if needed_rank > succ_rank {
-                        rank_map.insert(succ.to_string(), needed_rank);
-                    }
                 }
             }
         }

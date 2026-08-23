@@ -20,7 +20,10 @@ pub mod layout;
 pub mod diagram;
 
 pub use error::ComponentError;
-pub use theme::{Theme, Margin, DefaultTheme, DarkTheme, ForestTheme, NordicTheme, CappuccinoTheme};
+pub use theme::{
+    Theme, Margin, DefaultTheme, DarkTheme, ForestTheme, NordicTheme, CappuccinoTheme,
+    ThemeRecord, RecordTheme, builtin_theme_record,
+};
 pub use config::LayoutConfig;
 pub use layout::{Layout, NodeLayout, EdgeLayout, SubgraphLayout, TextBlock, compute_layout};
 pub use diagram::{DiagramOutput, FlowchartRenderer, SequenceRenderer};

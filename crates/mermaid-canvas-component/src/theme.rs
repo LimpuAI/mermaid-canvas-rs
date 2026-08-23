@@ -269,6 +269,153 @@ impl Theme for CappuccinoTheme {
     fn title_color(&self) -> &str { "#5d3a1a" }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// 记录主题 — WIT diagram-theme record 的载体（v2 会话协议）
+// ═══════════════════════════════════════════════════════════════
+
+/// 主题记录 — 与 WIT `diagram-theme` record 逐字段对应
+///
+/// 宿主（DesignTokens 模式感知派生）或内置主题名注入；
+/// `node_colors` 为 6 语义色槽（primary/secondary/accent/info/data/special），
+/// 经 `shape_slot` 映射消费。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ThemeRecord {
+    /// 背景色
+    pub background: String,
+    /// 前景/文本色
+    pub foreground: String,
+    /// 边线条色
+    pub edge_color: String,
+    /// 边标签背景色
+    pub edge_label_background: String,
+    /// 6 语义节点色槽
+    pub node_colors: Vec<String>,
+    /// 节点边框色
+    pub node_stroke: String,
+    /// 标题文本色
+    pub title_color: String,
+    /// 字体族
+    pub font_family: String,
+    /// 基础字体大小
+    pub base_font_size: f64,
+    /// 标题字体大小
+    pub title_font_size: f64,
+    /// 边距
+    pub margin: Margin,
+}
+
+impl Default for ThemeRecord {
+    fn default() -> Self {
+        builtin_theme_record("default").expect("default theme record must exist")
+    }
+}
+
+impl ThemeRecord {
+    /// 返回字体随缩放因子调整后的记录副本（fit-to-width 缩放时保持视觉一致性）
+    pub fn with_scaled_fonts(&self, scale: f64) -> Self {
+        let mut r = self.clone();
+        r.base_font_size *= scale;
+        r.title_font_size *= scale;
+        r
+    }
+}
+
+/// 记录主题 — 由 `ThemeRecord` 驱动的 `Theme` 实现
+///
+/// `node_colors` 少于 6 项时，缺失槽位回落到第 0 槽（primary），
+/// 保证宿主注入不完整时仍可渲染。
+pub struct RecordTheme {
+    record: ThemeRecord,
+}
+
+impl RecordTheme {
+    /// 从记录创建
+    pub fn new(record: ThemeRecord) -> Self {
+        Self { record }
+    }
+
+    /// 借用底层记录
+    pub fn record(&self) -> &ThemeRecord {
+        &self.record
+    }
+
+    fn slot_color(&self, shape: &NodeShape) -> &str {
+        let slot = shape_slot(shape);
+        self.record
+            .node_colors
+            .get(slot)
+            .or_else(|| self.record.node_colors.first())
+            .map(String::as_str)
+            .unwrap_or("#cccccc")
+    }
+}
+
+impl Theme for RecordTheme {
+    fn name(&self) -> &str { "Record" }
+    fn background_color(&self) -> &str { &self.record.background }
+    fn font_family(&self) -> &str { &self.record.font_family }
+    fn font_size(&self) -> f64 { self.record.base_font_size }
+    fn node_fill_color(&self, shape: &NodeShape) -> &str { self.slot_color(shape) }
+    fn node_stroke(&self) -> &str { &self.record.node_stroke }
+    fn node_text_color(&self) -> &str { &self.record.foreground }
+    fn edge_color(&self) -> &str { &self.record.edge_color }
+    fn edge_label_background(&self) -> &str { &self.record.edge_label_background }
+    /// 子图背景不在 WIT record 中（当前布局未产出子图），由背景色承担
+    fn subgraph_background(&self) -> &str { &self.record.background }
+    /// 子图边框由节点边框色承担
+    fn subgraph_border(&self) -> &str { &self.record.node_stroke }
+    fn title_color(&self) -> &str { &self.record.title_color }
+    fn margin(&self) -> Margin { self.record.margin.clone() }
+}
+
+/// 内置主题名 → 主题记录
+///
+/// 支持的名称：`"default"` / `"dark"` / `"forest"` / `"nordic"` / `"cappuccino"`；
+/// 未知名称返回 `None`（调用方决定回落）。
+pub fn builtin_theme_record(name: &str) -> Option<ThemeRecord> {
+    let (palette, background, node_stroke, node_text, edge_color, edge_label_bg, title_color) = match name {
+        "default" => (
+            DefaultTheme::PALETTE, DefaultTheme.background_color(), DefaultTheme.node_stroke(),
+            DefaultTheme.node_text_color(), DefaultTheme.edge_color(),
+            DefaultTheme.edge_label_background(), DefaultTheme.title_color(),
+        ),
+        "dark" => (
+            DarkTheme::PALETTE, DarkTheme.background_color(), DarkTheme.node_stroke(),
+            DarkTheme.node_text_color(), DarkTheme.edge_color(),
+            DarkTheme.edge_label_background(), DarkTheme.title_color(),
+        ),
+        "forest" => (
+            ForestTheme::PALETTE, ForestTheme.background_color(), ForestTheme.node_stroke(),
+            ForestTheme.node_text_color(), ForestTheme.edge_color(),
+            ForestTheme.edge_label_background(), ForestTheme.title_color(),
+        ),
+        "nordic" => (
+            NordicTheme::PALETTE, NordicTheme.background_color(), NordicTheme.node_stroke(),
+            NordicTheme.node_text_color(), NordicTheme.edge_color(),
+            NordicTheme.edge_label_background(), NordicTheme.title_color(),
+        ),
+        "cappuccino" => (
+            CappuccinoTheme::PALETTE, CappuccinoTheme.background_color(), CappuccinoTheme.node_stroke(),
+            CappuccinoTheme.node_text_color(), CappuccinoTheme.edge_color(),
+            CappuccinoTheme.edge_label_background(), CappuccinoTheme.title_color(),
+        ),
+        _ => return None,
+    };
+    Some(ThemeRecord {
+        background: background.to_string(),
+        foreground: node_text.to_string(),
+        edge_color: edge_color.to_string(),
+        edge_label_background: edge_label_bg.to_string(),
+        node_colors: palette.iter().map(|s| s.to_string()).collect(),
+        node_stroke: node_stroke.to_string(),
+        title_color: title_color.to_string(),
+        font_family: "sans-serif".to_string(),
+        base_font_size: 14.0,
+        title_font_size: 18.0,
+        margin: Margin::default(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -338,5 +485,100 @@ mod tests {
     #[test]
     fn test_forest_theme_dark_background() {
         assert_eq!(ForestTheme.background_color(), "#1b2a1b");
+    }
+
+    // ─── ThemeRecord / RecordTheme ──────────────────────────
+
+    #[test]
+    fn test_builtin_theme_record_all_five() {
+        for name in ["default", "dark", "forest", "nordic", "cappuccino"] {
+            let record = builtin_theme_record(name)
+                .unwrap_or_else(|| panic!("builtin record must exist for '{}'", name));
+            assert_eq!(record.node_colors.len(), 6, "{}: 6 node color slots", name);
+            assert!(!record.background.is_empty());
+            assert!(!record.foreground.is_empty());
+            assert!(record.base_font_size > 0.0);
+            assert!(record.title_font_size > 0.0);
+        }
+        assert!(builtin_theme_record("unknown").is_none());
+        assert!(builtin_theme_record("").is_none());
+    }
+
+    #[test]
+    fn test_builtin_record_matches_static_theme_colors() {
+        let record = builtin_theme_record("dark").unwrap();
+        let theme = RecordTheme::new(record);
+        assert_eq!(theme.background_color(), DarkTheme.background_color());
+        assert_eq!(theme.node_stroke(), DarkTheme.node_stroke());
+        assert_eq!(theme.edge_color(), DarkTheme.edge_color());
+        assert_eq!(theme.node_text_color(), DarkTheme.node_text_color());
+        assert_eq!(theme.title_color(), DarkTheme.title_color());
+        for shape in [
+            NodeShape::Rectangle, NodeShape::Subroutine, NodeShape::Diamond,
+            NodeShape::Circle, NodeShape::Cylinder, NodeShape::Hexagon,
+        ] {
+            assert_eq!(
+                theme.node_fill_color(&shape),
+                DarkTheme.node_fill_color(&shape),
+                "slot color must match static theme for {:?}",
+                shape,
+            );
+        }
+    }
+
+    #[test]
+    fn test_record_theme_shape_slot_coloring() {
+        let theme = RecordTheme::new(builtin_theme_record("default").unwrap());
+        // 6 槽语义分组：同组同色、跨组按槽取色
+        assert_eq!(theme.node_fill_color(&NodeShape::Rectangle), theme.node_fill_color(&NodeShape::RoundRect));
+        assert_eq!(
+            theme.node_fill_color(&NodeShape::Rectangle),
+            builtin_theme_record("default").unwrap().node_colors[0],
+        );
+        assert_eq!(
+            theme.node_fill_color(&NodeShape::Cylinder),
+            builtin_theme_record("default").unwrap().node_colors[4],
+        );
+    }
+
+    #[test]
+    fn test_record_theme_short_palette_falls_back_to_primary() {
+        let record = ThemeRecord {
+            node_colors: vec!["#111111".to_string()],
+            ..builtin_theme_record("default").unwrap()
+        };
+        let theme = RecordTheme::new(record);
+        // 缺失槽位（1-5）回落到第 0 槽
+        assert_eq!(theme.node_fill_color(&NodeShape::Diamond), "#111111");
+        assert_eq!(theme.node_fill_color(&NodeShape::Cylinder), "#111111");
+    }
+
+    #[test]
+    fn test_record_theme_default_is_default_theme() {
+        let record = ThemeRecord::default();
+        assert_eq!(record.background, "#ffffff");
+        assert_eq!(record.node_colors[0], "#dae8fc");
+        assert_eq!(record.margin, Margin::all(20.0));
+    }
+
+    #[test]
+    fn test_record_theme_margin_and_fonts() {
+        let mut record = builtin_theme_record("nordic").unwrap();
+        record.font_family = "Serif".to_string();
+        record.base_font_size = 16.0;
+        record.margin = Margin::all(12.0);
+        let theme = RecordTheme::new(record);
+        assert_eq!(theme.font_family(), "Serif");
+        assert_eq!(theme.font_size(), 16.0);
+        assert_eq!(theme.margin(), Margin::all(12.0));
+    }
+
+    #[test]
+    fn test_scaled_fonts_record() {
+        let record = builtin_theme_record("default").unwrap();
+        let scaled = record.with_scaled_fonts(0.5);
+        assert_eq!(scaled.base_font_size, record.base_font_size * 0.5);
+        assert_eq!(scaled.title_font_size, record.title_font_size * 0.5);
+        assert_eq!(scaled.node_colors, record.node_colors);
     }
 }

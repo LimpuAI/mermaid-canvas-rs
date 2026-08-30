@@ -1,7 +1,16 @@
-package mermaid:viz@2.0.0;
+package mermaid:viz@3.0.0;
+
+/// v3 变更（相对 2.0.0，canvas@2.0.0 窗口）:
+/// - 绘制词汇表升级至 `echodawn:canvas@2.0.0/draw`（Tier2 七通道/多轨道/
+///   dash/line-cap/per-corner/font features/命令 id/hover-effect）
+/// - hit-region 增 `hover: option<hover-effect>`（声明式 hover，宿主渲染）
+/// - diagram-theme 增 `hover-color`（hover 提亮语义色）与 `style-preset`
+///   （形轴 preset：classic/signal-flow/blueprint/editorial —— 只管形，
+///   色彩恒由宿主 token 注入槽位提供）
+/// - 会话形状不变：constructor + 六方法零增删
 
 interface diagram-renderer {
-    use echodawn:canvas/draw@1.0.0.{draw-cmd, layer, anim-desc};
+    use echodawn:canvas/draw@2.0.0.{draw-cmd, layer, anim-desc, hover-effect};
 
     record margin { top: f64, right: f64, bottom: f64, left: f64 }
 
@@ -14,6 +23,12 @@ interface diagram-renderer {
         node-colors: list<string>,   // 6 项，按 shape→slot 映射（primary/secondary/accent/info/data/special）
         node-stroke: string,
         title-color: string,
+        /// hover 提亮语义色（guest set-state 提亮的基准色；缺省用宿主近似）
+        hover-color: option<string>,
+        /// 形轴 preset："classic" | "signal-flow" | "blueprint" | "editorial"
+        /// （圆角/边宽/辉光/动效档位等形态学参数；缺省 classic。色彩不受
+        /// preset 影响 —— 恒由 node-colors 等 token 派生槽位提供）
+        style-preset: option<string>,
         font-family: string,
         base-font-size: f64,
         title-font-size: f64,
@@ -33,7 +48,16 @@ interface diagram-renderer {
     record render-result { layers: list<layer>, width: f64, height: f64 }
 
     /// 命中区：payload = 节点 id（宿主 tooltip 用；对照 deneb 的 datum 数据行）
-    record hit-region { index: u32, node-id: option<string>, bounds-x: f64, bounds-y: f64, bounds-w: f64, bounds-h: f64 }
+    record hit-region {
+        index: u32,
+        node-id: option<string>,
+        bounds-x: f64,
+        bounds-y: f64,
+        bounds-w: f64,
+        bounds-h: f64,
+        /// 声明式 hover 效果（宿主对 draw-cmd.id == index 的指令采样渲染，零 wasm 调用）
+        hover: option<hover-effect>,
+    }
 
     /// 有状态会话——形状对齐 deneb v2（构造 + 六方法），语义域化
     resource diagram {

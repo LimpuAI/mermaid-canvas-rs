@@ -10,7 +10,10 @@ use crate::layout::{NodeLayout, TextBlock};
 use crate::theme::Theme;
 
 /// Margin from the edge of the layout canvas
-const CANVAS_MARGIN: f64 = 40.0;
+pub(crate) const CANVAS_MARGIN: f64 = 40.0;
+
+/// 标题带与内容的间距（与 layout/mod.rs 的 TITLE_GAP 语义一致）
+const TITLE_GAP: f64 = 10.0;
 
 /// Assign x,y positions to nodes based on ranks and ordering.
 ///
@@ -20,6 +23,7 @@ const CANVAS_MARGIN: f64 = 40.0;
 /// BottomUp / RightToLeft are laid out as their forward counterpart and then
 /// mirrored.
 ///
+/// 存在标题时在内容上方预留标题带（title_font_size 行高 + 间距）。
 /// Returns `(node_layouts, total_width, total_height)`.
 pub fn assign_positions<T: Theme>(
     ranks: &[Vec<String>],
@@ -28,16 +32,20 @@ pub fn assign_positions<T: Theme>(
     config: &LayoutConfig,
     theme: &T,
 ) -> (BTreeMap<String, NodeLayout>, f64, f64) {
+    // 标题带高度（T15：Title 层在内容带上方预留）
+    let title_band = ast.title.as_ref()
+        .map(|_| theme.title_font_size() * 1.4 + TITLE_GAP)
+        .unwrap_or(0.0);
     match ast.direction {
         Direction::TopDown | Direction::BottomUp => {
-            let (mut layouts, w, h) = assign_vertical(ranks, ast, config, theme);
+            let (mut layouts, w, h) = assign_vertical(ranks, ast, config, theme, title_band);
             if ast.direction == Direction::BottomUp {
                 mirror_y(&mut layouts, h);
             }
             (layouts, w, h)
         }
         Direction::LeftToRight | Direction::RightToLeft => {
-            let (mut layouts, w, h) = assign_horizontal(ranks, ast, config, theme);
+            let (mut layouts, w, h) = assign_horizontal(ranks, ast, config, theme, title_band);
             if ast.direction == Direction::RightToLeft {
                 mirror_x(&mut layouts, w);
             }
@@ -98,6 +106,7 @@ fn assign_vertical<T: Theme>(
     ast: &DiagramAst,
     config: &LayoutConfig,
     theme: &T,
+    title_band: f64,
 ) -> (BTreeMap<String, NodeLayout>, f64, f64) {
     let font_size = theme.font_size();
     let node_dims = compute_all_node_dims(ast, config, theme);
@@ -125,7 +134,7 @@ fn assign_vertical<T: Theme>(
     // rank_spacing is the GAP between ranks, not the stride:
     // the cursor advances by max_node_height_in_rank + rank_spacing.
     let mut layouts: BTreeMap<String, NodeLayout> = BTreeMap::new();
-    let mut y_cursor = CANVAS_MARGIN;
+    let mut y_cursor = CANVAS_MARGIN + title_band;
 
     for (rank_idx, rank_nodes) in ranks.iter().enumerate() {
         if rank_nodes.is_empty() {
@@ -163,6 +172,7 @@ fn assign_horizontal<T: Theme>(
     ast: &DiagramAst,
     config: &LayoutConfig,
     theme: &T,
+    title_band: f64,
 ) -> (BTreeMap<String, NodeLayout>, f64, f64) {
     let font_size = theme.font_size();
     let node_dims = compute_all_node_dims(ast, config, theme);
@@ -185,7 +195,7 @@ fn assign_horizontal<T: Theme>(
     }
 
     let max_rank_height = rank_heights.iter().copied().fold(0.0_f64, f64::max);
-    let total_height = max_rank_height + 2.0 * CANVAS_MARGIN;
+    let total_height = max_rank_height + 2.0 * CANVAS_MARGIN + title_band;
 
     let mut layouts: BTreeMap<String, NodeLayout> = BTreeMap::new();
     let mut x_cursor = CANVAS_MARGIN;
@@ -196,7 +206,7 @@ fn assign_horizontal<T: Theme>(
         }
 
         let rank_h = rank_heights[rank_idx];
-        let rank_start_y = CANVAS_MARGIN + (max_rank_height - rank_h) / 2.0;
+        let rank_start_y = CANVAS_MARGIN + title_band + (max_rank_height - rank_h) / 2.0;
 
         let max_w_in_rank: f64 = rank_nodes.iter()
             .filter_map(|id| node_dims.get(id).map(|(w, _)| *w))

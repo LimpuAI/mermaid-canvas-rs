@@ -183,6 +183,8 @@ impl WasmHost {
             node_colors: theme.node_colors.clone(),
             node_stroke: theme.node_stroke.clone(),
             title_color: theme.title_color.clone(),
+            hover_color: theme.hover_color.clone(),
+            style_preset: theme.style_preset.clone(),
             font_family: theme.font_family.clone(),
             base_font_size: theme.base_font_size,
             title_font_size: theme.title_font_size,
@@ -259,14 +261,20 @@ fn bg_to_wit_draw_cmd(c: BgDrawCmd) -> WitDrawCmd {
         stroke: c.stroke.map(bg_to_wit_paint),
         stroke_width: c.stroke_width,
         corner_radius: c.corner_radius,
+        corner_radii: c.corner_radii,
+        dash: c.dash,
+        line_cap: c.line_cap,
         text_content: c.text_content,
         font: c.font.map(|f| WitFontDesc {
             family: f.family,
             weight: f.weight,
             italic: f.italic,
+            features: f.features,
         }),
         group_depth: c.group_depth,
-        anim: None,
+        id: c.id,
+        // 宿主侧不消费 Tier 2 anims（wasm 侧 SignalFlow 呼吸才附着；此处展平为空）
+        anims: Vec::new(),
     }
 }
 
@@ -278,5 +286,9 @@ fn bg_to_wit_hit_region(r: BgHitRegion) -> WitHitRegion {
         bounds_y: r.bounds_y,
         bounds_w: r.bounds_w,
         bounds_h: r.bounds_h,
+        hover: r.hover.map(|h| WitHoverEffect {
+            kind: h.kind,
+            params: h.params,
+        }),
     }
 }

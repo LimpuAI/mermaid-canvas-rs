@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 
-use mermaid_canvas_core::{DiagramAst, interaction::BoundingBox, NodeShape};
+use mermaid_canvas_core::{DiagramAst, EdgeStyle, interaction::BoundingBox, NodeShape};
 
 use crate::config::LayoutConfig;
 use crate::layout::{EdgeLayout, Layout, NodeLayout, SubgraphLayout, TextBlock};
@@ -35,7 +35,7 @@ const BOTTOM_MARGIN: f64 = 40.0;
 /// Compute sequence diagram layout
 pub fn compute_sequence_layout<T: Theme>(
     ast: &DiagramAst,
-    _theme: &T,
+    theme: &T,
     _config: &LayoutConfig,
 ) -> Layout {
     let meta = match &ast.sequence_meta {
@@ -46,6 +46,12 @@ pub fn compute_sequence_layout<T: Theme>(
     if meta.participant_order.is_empty() {
         return empty_layout();
     }
+
+    // 标题带（T15 — Title 层在参与头之上预留）
+    let title_band = ast.title.as_ref()
+        .map(|_| theme.title_font_size() * 1.4 + 8.0)
+        .unwrap_or(0.0);
+    let top = MARGIN_Y + title_band;
 
     // 1. Compute participant X positions
     let participant_count = meta.participant_order.len();
@@ -58,7 +64,7 @@ pub fn compute_sequence_layout<T: Theme>(
     }
 
     // 2. Compute Y positions per step
-    let first_message_y = MARGIN_Y + HEADER_HEIGHT + HEADER_GAP;
+    let first_message_y = top + HEADER_HEIGHT + HEADER_GAP;
     let total_steps = meta.total_steps.max(ast.edges.len());
 
     // 3. Build node layouts for participant headers
@@ -77,19 +83,19 @@ pub fn compute_sequence_layout<T: Theme>(
         nodes.insert(pid.clone(), NodeLayout {
             id: pid.clone(),
             x: header_x,
-            y: MARGIN_Y,
+            y: top,
             width: header_width,
             height: header_height,
             label: TextBlock {
                 text: label_text.to_string(),
                 x: header_x,
-                y: MARGIN_Y,
+                y: top,
                 width: header_width,
                 height: header_height,
                 font_size: 14.0,
             },
             shape,
-            bounds: BoundingBox::new(header_x, MARGIN_Y, header_width, header_height),
+            bounds: BoundingBox::new(header_x, top, header_width, header_height),
         });
     }
 
@@ -123,6 +129,11 @@ pub fn compute_sequence_layout<T: Theme>(
                 }),
                 label_anchor: Some((from_x + loop_width + 5.0, y - 5.0)),
                 directed: edge.directed,
+                arrow_start: edge.arrow_start,
+                arrow_end: edge.arrow_end,
+                start_decoration: edge.start_decoration,
+                end_decoration: edge.end_decoration,
+                style: edge.style,
             });
         } else {
             edges.push(EdgeLayout {
@@ -144,6 +155,11 @@ pub fn compute_sequence_layout<T: Theme>(
                     ((from_x + to_x) / 2.0, y - 8.0)
                 }),
                 directed: edge.directed,
+                arrow_start: edge.arrow_start,
+                arrow_end: edge.arrow_end,
+                start_decoration: edge.start_decoration,
+                end_decoration: edge.end_decoration,
+                style: edge.style,
             });
         }
     }
@@ -272,7 +288,7 @@ pub fn compute_sequence_layout<T: Theme>(
 
     for pid in &meta.participant_order {
         let x = *participant_x.get(pid).unwrap();
-        let header_bottom = MARGIN_Y + HEADER_HEIGHT;
+        let header_bottom = top + HEADER_HEIGHT;
         edges.push(EdgeLayout {
             from: pid.clone(),
             to: format!("{}_lifeline_end", pid),
@@ -283,6 +299,12 @@ pub fn compute_sequence_layout<T: Theme>(
             label: None,
             label_anchor: None,
             directed: false,
+            arrow_start: None,
+            arrow_end: None,
+            start_decoration: None,
+            end_decoration: None,
+            // 生命线 = 长虚线（T12 消费为 dash 节律）
+            style: EdgeStyle::Dashed,
         });
     }
 
@@ -290,12 +312,26 @@ pub fn compute_sequence_layout<T: Theme>(
     let canvas_width = MARGIN_X * 2.0 + (participant_count - 1).max(0) as f64 * column_width;
     let canvas_height = last_y + BOTTOM_MARGIN;
 
+    // 标题带（顶部居中）
+    let title = ast.title.as_ref().map(|text| {
+        let fs = theme.title_font_size();
+        TextBlock {
+            text: text.clone(),
+            x: canvas_width / 2.0,
+            y: MARGIN_Y / 2.0 + fs / 2.0,
+            width: estimate_text_width(text),
+            height: fs * 1.4,
+            font_size: fs,
+        }
+    });
+
     Layout {
         width: canvas_width,
         height: canvas_height,
         nodes,
         edges,
         subgraphs,
+        title,
     }
 }
 
@@ -308,6 +344,7 @@ fn empty_layout() -> Layout {
         nodes: BTreeMap::new(),
         edges: Vec::new(),
         subgraphs: Vec::new(),
+        title: None,
     }
 }
 

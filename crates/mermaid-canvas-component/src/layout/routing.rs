@@ -61,7 +61,8 @@ fn route_single_edge(
         text: text.clone(),
         x: label_anchor.unwrap_or((0.0, 0.0)).0,
         y: label_anchor.unwrap_or((0.0, 0.0)).1,
-        width: text.len() as f64 * 7.0,
+        // 字宽估算按字符数（CJK 字节数会高估 3x）
+        width: text.chars().count() as f64 * 7.0,
         height: 16.0,
         font_size: 12.0,
     });
@@ -73,6 +74,12 @@ fn route_single_edge(
         label,
         label_anchor,
         directed: edge.directed,
+        // 形态学元数据透传（T11 箭头 / T12 线型消费）
+        arrow_start: edge.arrow_start,
+        arrow_end: edge.arrow_end,
+        start_decoration: edge.start_decoration,
+        end_decoration: edge.end_decoration,
+        style: edge.style,
     }
 }
 
@@ -260,6 +267,11 @@ fn empty_edge(edge: &DiagramEdge) -> EdgeLayout {
         label: None,
         label_anchor: None,
         directed: edge.directed,
+        arrow_start: edge.arrow_start,
+        arrow_end: edge.arrow_end,
+        start_decoration: edge.start_decoration,
+        end_decoration: edge.end_decoration,
+        style: edge.style,
     }
 }
 

@@ -2,13 +2,25 @@
 
 use mermaid_canvas_component::Margin;
 
-// ─── echodawn:canvas/draw 共享词汇表 ────────────────────────
+// ─── echodawn:canvas/draw 共享词汇表（v2 — 七通道/多轨道）────
 
-/// WIT `anim-property` — 可动画属性
+/// WIT `anim-property` — 可动画属性（v2 七通道：transform 组 + color + stroke-width）
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum WitAnimProperty {
     /// 不透明度
     Opacity,
+    /// x 平移（px）
+    TranslateX,
+    /// y 平移（px）
+    TranslateY,
+    /// 缩放（倍率）
+    Scale,
+    /// 旋转（度）
+    Rotate,
+    /// 描边宽度（px）
+    StrokeWidth,
+    /// 颜色（标量因子：0=基色 1=alt-color）
+    Color,
 }
 
 /// WIT `loop-mode` — 循环模式
@@ -46,6 +58,8 @@ pub struct WitAnimDesc {
     pub delay_ms: u32,
     /// 循环模式
     pub loop_mode: WitLoopMode,
+    /// color 属性专用：因子 0=指令基色 1=alt-color；其余属性忽略
+    pub alt_color: Option<String>,
 }
 
 /// WIT `font-desc` — 字体描述
@@ -57,6 +71,17 @@ pub struct WitFontDesc {
     pub weight: Option<u16>,
     /// 斜体
     pub italic: bool,
+    /// OpenType features（"tabular-nums" 等；宿主文本布局消费）
+    pub features: Option<Vec<String>>,
+}
+
+/// WIT `hover-effect` — 声明式 hover 效果（宿主对 draw-cmd.id == region.index 的指令采样渲染）
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WitHoverEffect {
+    /// "brighten" | "scale" | "lift" | "outline" | "glow" — 未知 kind 宿主 warn + 跳过
+    pub kind: String,
+    /// kind 语义参数；时长固定走宿主 hover 过渡档（150ms）
+    pub params: Vec<f64>,
 }
 
 /// WIT `gradient-stop` — 渐变停止点
@@ -92,7 +117,32 @@ pub enum WitPaint {
     Gradient(WitLinearGradient),
 }
 
-/// WIT `draw-cmd` — 无损绘制指令（展平结构，不支持递归类型）
+/// WIT `shadow-desc` — 外阴影描述（CSS box-shadow 外阴影子集，宿主 SDF
+/// 高斯软阴影 pass 渲染；忌以实体描边/填充模拟——硬边阴影在入场缩放下呈厚重黑框）
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WitShadowDesc {
+    /// x 偏移（px；正值向右）
+    pub offset_x: f64,
+    /// y 偏移（px；正值向下）
+    pub offset_y: f64,
+    /// 模糊半径（px；0 = 硬边）
+    pub blur: f64,
+    /// 扩散（px；正值扩张阴影轮廓，负值收缩）
+    pub spread: f64,
+    /// 阴影基色（hex/rgb/rgba 字符串；透明度以 alpha 字段为准）
+    pub color: String,
+    /// 阴影不透明度（0-1；最终 alpha = color 自身 alpha × alpha）
+    pub alpha: f64,
+    /// 阴影形状宽（px；绕宿主形状中心）。path 指令缺省 (0,0) = 包围盒；
+    /// 菱形等对角形状显式声明内接正方形 + rotation 45 即得真实轮廓阴影
+    pub width: f64,
+    /// 阴影形状高（px；语义同 width）
+    pub height: f64,
+    /// 阴影形状旋转角（度；顺时针，绕宿主形状中心）
+    pub rotation: f64,
+}
+
+/// WIT `draw-cmd` — 无损绘制指令（展平结构，不支持递归类型；v2 多轨道/装饰通道）
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct WitDrawCmd {
     /// 指令类型："rect" | "path" | "circle" | "text"
@@ -107,14 +157,26 @@ pub struct WitDrawCmd {
     pub stroke_width: Option<f64>,
     /// 圆角半径
     pub corner_radius: Option<f64>,
+    /// per-corner 圆角（TL, TR, BR, BL）；与 corner-radius 同存时优先
+    pub corner_radii: Option<(f64, f64, f64, f64)>,
+    /// 虚线节律（线段/间隙交替，px）；缺省或空 = 实线
+    pub dash: Option<Vec<f64>>,
+    /// 线端帽："butt" | "round" | "square"；缺省 butt
+    pub line_cap: Option<String>,
+    /// 外阴影（rect/circle/path 支持；path 以包围盒近似；None = 无阴影）。
+    /// 阴影统一绘制于全部形状之前的专用 shadow pass（z 序 = 所有形状之下）
+    #[serde(default)]
+    pub shadow: Option<WitShadowDesc>,
     /// 文本内容
     pub text_content: Option<String>,
     /// 字体描述
     pub font: Option<WitFontDesc>,
     /// 分组深度
     pub group_depth: u32,
-    /// Tier 2 动画附着（D9：协议带通道，native 不附着 — 恒 None）
-    pub anim: Option<WitAnimDesc>,
+    /// 命令身份：所属 hit-region index（一对多；宿主 per-item 效果关联键）
+    pub id: Option<u32>,
+    /// Tier 2 多轨道动画（v2 起替代 v1 的单 anim 字段；SignalFlow preset 呼吸动效附着）
+    pub anims: Vec<WitAnimDesc>,
 }
 
 /// WIT `layer` — 渲染层
@@ -174,6 +236,11 @@ pub struct WitDiagramTheme {
     pub node_stroke: String,
     /// 标题文本色
     pub title_color: String,
+    /// hover 提亮语义色（guest set-state 提亮的基准色；缺省用宿主近似）
+    pub hover_color: Option<String>,
+    /// 形轴 preset："classic" | "signal-flow" | "blueprint" | "editorial"（缺省 classic；
+    /// 只管形态学参数，色彩恒由 node-colors 等 token 槽位提供）
+    pub style_preset: Option<String>,
     /// 字体族
     pub font_family: String,
     /// 基础字体大小
@@ -243,4 +310,6 @@ pub struct WitHitRegion {
     pub bounds_w: f64,
     /// 包围盒高度
     pub bounds_h: f64,
+    /// 声明式 hover 效果（宿主对 draw-cmd.id == index 的指令采样渲染，零 wasm 调用）
+    pub hover: Option<WitHoverEffect>,
 }

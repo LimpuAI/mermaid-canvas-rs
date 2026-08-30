@@ -4,6 +4,48 @@
 
 use crate::style::{FillStyle, StrokeStyle, TextStyle, TextAnchor, TextBaseline};
 
+/// 外阴影描述 — WIT `shadow-desc` 载体（宿主 SDF 高斯软阴影 pass 渲染；
+/// 忌以实体描边/填充模拟——硬边阴影在入场缩放下呈厚重黑框）
+#[derive(Clone, Debug, PartialEq)]
+pub struct CmdShadow {
+    /// x 偏移（px；正值向右）
+    pub offset_x: f64,
+    /// y 偏移（px；正值向下）
+    pub offset_y: f64,
+    /// 模糊半径（px；0 = 硬边）
+    pub blur: f64,
+    /// 扩散（px；正值扩张阴影轮廓，负值收缩）
+    pub spread: f64,
+    /// 阴影基色（hex/rgb/rgba 字符串；透明度以 alpha 字段为准）
+    pub color: String,
+    /// 阴影不透明度（0-1；最终 alpha = color 自身 alpha × alpha）
+    pub alpha: f64,
+    /// 阴影形状宽（px；绕宿主形状中心）。path 指令缺省 (0,0) = 包围盒
+    pub width: f64,
+    /// 阴影形状高（px；语义同 width）
+    pub height: f64,
+    /// 阴影形状旋转角（度；顺时针，绕宿主形状中心）
+    pub rotation: f64,
+}
+
+/// 装饰通道 — WIT `echodawn:canvas@2.0.0/draw` 新字段（dash/line-cap/线宽/命令 id/shadow）的内部载体
+///
+/// 经 [`DrawCmd::Decorated`] 包装附加到任意指令；WIT 投影时并入展平指令，
+/// 原生 canvas 路径消费 `stroke_width`（dash/line-cap/shadow 无对应 CanvasOp，忽略）。
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CmdDecor {
+    /// 描边宽度（px）
+    pub stroke_width: Option<f64>,
+    /// 虚线节律（线段/间隙交替，px）；None = 实线
+    pub dash: Option<Vec<f64>>,
+    /// 线端帽："butt" | "round" | "square"；None = butt
+    pub line_cap: Option<String>,
+    /// 命令身份 = 所属 hit-region index（一对多；宿主 per-item 效果关联键）
+    pub id: Option<u32>,
+    /// 外阴影（None = 无）
+    pub shadow: Option<CmdShadow>,
+}
+
 /// 绘图指令
 #[derive(Clone, Debug, PartialEq)]
 pub enum DrawCmd {
@@ -44,6 +86,13 @@ pub enum DrawCmd {
     Group {
         label: Option<String>,
         items: Vec<DrawCmd>,
+    },
+    /// 装饰指令 — 附加 dash/line-cap/线宽/命令 id 等装饰通道到内层指令
+    Decorated {
+        /// 内层指令
+        inner: Box<DrawCmd>,
+        /// 装饰通道
+        decor: CmdDecor,
     },
 }
 
@@ -116,6 +165,16 @@ impl DrawCmd {
                     ops.extend(item.to_canvas_ops());
                 }
                 ops.push(CanvasOp::Restore);
+                ops
+            }
+            DrawCmd::Decorated { inner, decor } => {
+                // 线宽先行设置（canvas 状态机语义：描边取当下线宽）；
+                // dash/line_cap 无对应 CanvasOp，仅 WIT 投影消费
+                let mut ops = Vec::new();
+                if let Some(w) = decor.stroke_width {
+                    ops.push(CanvasOp::SetLineWidth(w));
+                }
+                ops.extend(inner.to_canvas_ops());
                 ops
             }
         }

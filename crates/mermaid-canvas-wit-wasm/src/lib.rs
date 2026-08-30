@@ -1,11 +1,11 @@
-//! mermaid-canvas-wit-wasm: WASI Component Model 导出层（v2 — resource session 协议）
+//! mermaid-canvas-wit-wasm: WASI Component Model 导出层（v3 — canvas@2.0.0 窗口）
 //!
 //! 使用 wit-bindgen 0.57 从 world.wit 生成 guest 绑定，
 //! 将 mermaid-canvas-wit 的功能导出为标准 WASI Component。
 //!
-//! v2：`diagram` resource 有状态会话（constructor/update-source/resize/set-state/
-//! set-theme/render(t)/hit-regions），取代 v1 的自由函数 render/hit-test；
-//! draw-cmd 经 echodawn:canvas/draw 共享词汇表无损投影。
+//! v3：绘制词汇表升级至 echodawn:canvas@2.0.0/draw（Tier2 七通道/多轨道/
+//! dash/line-cap/per-corner/font features/命令 id/hover-effect）；
+//! 会话形状不变 — constructor + 六方法零增删。
 
 wit_bindgen::generate!({
     path: "../mermaid-canvas-wit/wit",
@@ -24,8 +24,10 @@ use exports::mermaid::viz::diagram_renderer::{
 // echodawn:canvas/draw 被 diagram-renderer `use` — bindgen 将其类型生成在 crate 根
 use echodawn::canvas::draw::{
     AnimDesc as BgAnimDesc, AnimProperty as BgAnimProperty, DrawCmd as BgDrawCmd,
-    FontDesc as BgFontDesc, GradientStop as BgGradientStop, Keyframe as BgKeyframe,
-    Layer as BgLayer, LinearGradient as BgLinearGradient, LoopMode as BgLoopMode, Paint as BgPaint,
+    ShadowDesc as BgShadowDesc,
+    FontDesc as BgFontDesc, GradientStop as BgGradientStop, HoverEffect as BgHoverEffect,
+    Keyframe as BgKeyframe, Layer as BgLayer, LinearGradient as BgLinearGradient,
+    LoopMode as BgLoopMode, Paint as BgPaint,
 };
 
 // diagram-renderer 接口仅含 resource — 接口级 Guest 为空标记，
@@ -115,6 +117,8 @@ fn bg_to_wit_theme(t: BgDiagramTheme) -> WitDiagramTheme {
         node_colors: t.node_colors,
         node_stroke: t.node_stroke,
         title_color: t.title_color,
+        hover_color: t.hover_color,
+        style_preset: t.style_preset,
         font_family: t.font_family,
         base_font_size: t.base_font_size,
         title_font_size: t.title_font_size,
@@ -149,14 +153,34 @@ fn wit_draw_cmd_to_bindgen(c: WitDrawCmd) -> BgDrawCmd {
         stroke: c.stroke.map(wit_paint_to_bindgen),
         stroke_width: c.stroke_width,
         corner_radius: c.corner_radius,
+        corner_radii: c.corner_radii,
+        dash: c.dash,
+        line_cap: c.line_cap,
+        shadow: c.shadow.map(wit_shadow_to_bindgen),
         text_content: c.text_content,
         font: c.font.map(|f| BgFontDesc {
             family: f.family,
             weight: f.weight,
             italic: f.italic,
+            features: f.features,
         }),
         group_depth: c.group_depth,
-        anim: c.anim.map(wit_anim_to_bindgen),
+        id: c.id,
+        anims: c.anims.into_iter().map(wit_anim_to_bindgen).collect(),
+    }
+}
+
+fn wit_shadow_to_bindgen(s: WitShadowDesc) -> BgShadowDesc {
+    BgShadowDesc {
+        offset_x: s.offset_x,
+        offset_y: s.offset_y,
+        blur: s.blur,
+        spread: s.spread,
+        color: s.color,
+        alpha: s.alpha,
+        width: s.width,
+        height: s.height,
+        rotation: s.rotation,
     }
 }
 
@@ -180,6 +204,12 @@ fn wit_anim_to_bindgen(a: WitAnimDesc) -> BgAnimDesc {
     BgAnimDesc {
         property: match a.property {
             WitAnimProperty::Opacity => BgAnimProperty::Opacity,
+            WitAnimProperty::TranslateX => BgAnimProperty::TranslateX,
+            WitAnimProperty::TranslateY => BgAnimProperty::TranslateY,
+            WitAnimProperty::Scale => BgAnimProperty::Scale,
+            WitAnimProperty::Rotate => BgAnimProperty::Rotate,
+            WitAnimProperty::StrokeWidth => BgAnimProperty::StrokeWidth,
+            WitAnimProperty::Color => BgAnimProperty::Color,
         },
         keyframes: a.keyframes.into_iter().map(|k| BgKeyframe {
             t: k.t,
@@ -193,6 +223,7 @@ fn wit_anim_to_bindgen(a: WitAnimDesc) -> BgAnimDesc {
             WitLoopMode::Loop => BgLoopMode::Loop,
             WitLoopMode::PingPong => BgLoopMode::PingPong,
         },
+        alt_color: a.alt_color,
     }
 }
 
@@ -204,6 +235,10 @@ fn wit_hit_region_to_bindgen(r: WitHitRegion) -> BgHitRegion {
         bounds_y: r.bounds_y,
         bounds_w: r.bounds_w,
         bounds_h: r.bounds_h,
+        hover: r.hover.map(|h| BgHoverEffect {
+            kind: h.kind,
+            params: h.params,
+        }),
     }
 }
 

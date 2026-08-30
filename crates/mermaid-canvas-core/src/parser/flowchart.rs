@@ -313,15 +313,20 @@ fn extract_leading_decoration(right: &str) -> Option<(&str, String)> {
 }
 
 /// Mask bracket/paren/brace content to prevent arrow-matching inside labels
+///
+/// 填充必须**逐字节等长**：masked 仅供 regex 定位，捕获组再按字节偏移回原文切片
+/// （`parse_edge_line` 的 `extract`）。若多字节字符（CJK 标签）被替成单字节空格，
+/// 偏移错位会在原文上切出非 char-boundary → panic。此处按 `len_utf8` 填等长空格。
 fn mask_bracket_content(line: &str) -> String {
-    let mut result = line.chars().collect::<Vec<char>>();
+    let mut result = String::with_capacity(line.len());
     let mut depth = 0i32;
     let mut in_bracket = false;
-    for ch in result.iter_mut() {
-        match *ch {
+    for ch in line.chars() {
+        match ch {
             '[' | '(' | '{' => {
                 depth += 1;
                 in_bracket = true;
+                result.push(ch);
             }
             ']' | ')' | '}' => {
                 depth -= 1;
@@ -329,15 +334,19 @@ fn mask_bracket_content(line: &str) -> String {
                     depth = 0;
                     in_bracket = false;
                 }
+                result.push(ch);
             }
             _ => {
                 if in_bracket {
-                    *ch = ' ';
+                    // 等长空格填充：多字节字符填 len_utf8 个空格，字节偏移与原文对齐
+                    result.push_str(&" ".repeat(ch.len_utf8()));
+                } else {
+                    result.push(ch);
                 }
             }
         }
     }
-    result.into_iter().collect()
+    result
 }
 
 // ── Edge chaining ────────────────────────────────────────────────────
@@ -381,6 +390,92 @@ fn split_edge_chain(line: &str) -> Option<Vec<String>> {
     Some(edges)
 }
 
+// ── linkStyle（边形态学覆盖）─────────────────────────────────────────
+
+/// linkStyle 目标：`default`（全边）或逗号分隔边序号
+#[derive(Debug, Clone)]
+enum LinkStyleTarget {
+    /// 全部边
+    Default,
+    /// 按声明序的边索引列表
+    Indices(Vec<usize>),
+}
+
+/// linkStyle 形态学属性（色彩指令忽略 — 形轴分离：色彩恒来自主题槽位）
+#[derive(Debug, Clone, Default)]
+struct LinkStyleOverride {
+    /// stroke-dasharray 数值
+    dasharray: Option<Vec<f64>>,
+    /// stroke-width 数值（px）
+    stroke_width: Option<f64>,
+}
+
+/// 解析 `linkStyle 0,2 stroke-dasharray:6 4,stroke-width:2px` 形式
+fn parse_link_style_line(line: &str, out: &mut Vec<(LinkStyleTarget, LinkStyleOverride)>) {
+    let rest = line.strip_prefix("linkStyle").unwrap_or("").trim();
+    let mut parts = rest.splitn(2, char::is_whitespace);
+    let target_str = parts.next().unwrap_or("").trim();
+    let props_str = parts.next().unwrap_or("").trim();
+    if target_str.is_empty() {
+        return;
+    }
+
+    let target = if target_str == "default" {
+        LinkStyleTarget::Default
+    } else {
+        let indices = target_str
+            .split(',')
+            .filter_map(|t| t.trim().parse::<usize>().ok())
+            .collect::<Vec<_>>();
+        if indices.is_empty() {
+            return;
+        }
+        LinkStyleTarget::Indices(indices)
+    };
+
+    let mut ov = LinkStyleOverride::default();
+    for prop in props_str.split(',') {
+        if let Some((key, value)) = prop.trim().split_once(':') {
+            match key.trim() {
+                "stroke-dasharray" => {
+                    // "6 4" / "6,4"（属性内逗号已被外层 split 吃掉时退化为单值）
+                    let dash: Vec<f64> = value
+                        .split_whitespace()
+                        .filter_map(|v| v.parse::<f64>().ok())
+                        .collect();
+                    if !dash.is_empty() {
+                        ov.dasharray = Some(dash);
+                    }
+                }
+                "stroke-width" => {
+                    if let Ok(w) = value.trim().trim_end_matches("px").parse::<f64>() {
+                        ov.stroke_width = Some(w);
+                    }
+                }
+                // stroke/color 等色彩指令不消费（形轴分离铁律）
+                _ => {}
+            }
+        }
+    }
+    out.push((target, ov));
+}
+
+/// linkStyle 覆盖 → EdgeStyle 语义（短节律 → Dotted，长节律 → Dashed，粗线 → Thick）
+fn link_override_to_style(ov: &LinkStyleOverride) -> Option<EdgeStyle> {
+    if let Some(dash) = &ov.dasharray {
+        // 节律全 ≤2.5px 视为点线，否则虚线
+        if dash.iter().all(|&d| d <= 2.5) {
+            Some(EdgeStyle::Dotted)
+        } else {
+            Some(EdgeStyle::Dashed)
+        }
+    } else if ov.stroke_width.map_or(false, |w| w >= 2.5) {
+        Some(EdgeStyle::Thick)
+    } else {
+        None
+    }
+}
+
 // ── Main parser ──────────────────────────────────────────────────────
 
 /// 解析 flowchart 语法
@@ -392,9 +487,29 @@ pub fn parse_flowchart(input: &str) -> Result<DiagramAst, CoreError> {
     let mut class_defs: HashMap<String, NodeStyle> = HashMap::new();
     // Node → class assignments
     let mut node_classes: HashMap<String, Vec<String>> = HashMap::new();
+    // linkStyle 覆盖（主循环后应用 — 指令可先于边声明出现）
+    let mut link_overrides: Vec<(LinkStyleTarget, LinkStyleOverride)> = Vec::new();
 
-    for raw_line in input.lines() {
+    // YAML frontmatter（--- ... ---）：首行 --- 进入（仅标记存在时消费首行），闭合 --- 退出；采集 title
+    let mut lines = input.lines().peekable();
+    let mut in_frontmatter = lines.peek().map(|l| l.trim()) == Some("---");
+    if in_frontmatter {
+        let _ = lines.next(); // 消费开标记行
+    }
+
+    for raw_line in lines {
         let line = raw_line.trim();
+        if in_frontmatter {
+            if line == "---" {
+                in_frontmatter = false;
+            } else if let Some(title) = line.strip_prefix("title:") {
+                let title = title.trim();
+                if !title.is_empty() {
+                    ast.title = Some(title.to_string());
+                }
+            }
+            continue;
+        }
         if line.is_empty() || line.starts_with("%%") {
             continue;
         }
@@ -464,8 +579,9 @@ pub fn parse_flowchart(input: &str) -> Result<DiagramAst, CoreError> {
             continue;
         }
 
-        // linkStyle — skip (we don't support per-edge style override yet)
+        // linkStyle — 边形态学覆盖（dasharray/宽度）
         if line.starts_with("linkStyle") {
+            parse_link_style_line(line, &mut link_overrides);
             continue;
         }
 
@@ -475,8 +591,17 @@ pub fn parse_flowchart(input: &str) -> Result<DiagramAst, CoreError> {
             continue;
         }
 
+        // title 指令 → title 层
+        if let Some(title) = line.strip_prefix("title ") {
+            let title = title.trim();
+            if !title.is_empty() {
+                ast.title = Some(title.to_string());
+            }
+            continue;
+        }
+
         // accTitle/accDescr — skip
-        if line.starts_with("accTitle") || line.starts_with("accDescr") || line.starts_with("title ") {
+        if line.starts_with("accTitle") || line.starts_with("accDescr") {
             continue;
         }
 
@@ -494,6 +619,25 @@ pub fn parse_flowchart(input: &str) -> Result<DiagramAst, CoreError> {
             let mut style = resolve_style(&node_id, &classes, &class_defs, &node_classes);
             ensure_node_with(&mut ast, &node_id, &label, shape, &mut style);
             add_node_to_subgraphs(&mut ast, &subgraph_stack, &node_id);
+        }
+    }
+
+    // linkStyle 后置应用（边序 = 声明序）
+    for (target, ov) in &link_overrides {
+        let Some(new_style) = link_override_to_style(ov) else { continue };
+        match target {
+            LinkStyleTarget::Default => {
+                for edge in &mut ast.edges {
+                    edge.style = new_style;
+                }
+            }
+            LinkStyleTarget::Indices(indices) => {
+                for &i in indices {
+                    if let Some(edge) = ast.edges.get_mut(i) {
+                        edge.style = new_style;
+                    }
+                }
+            }
         }
     }
 
@@ -1064,15 +1208,90 @@ flowchart TD
 
     #[test]
     fn test_frontmatter_input() {
-        // Parser treats `---` and `title: test` as node definitions since it doesn't
-        // handle YAML frontmatter. Verify the flowchart content is still parsed correctly.
+        // frontmatter 被跳过并采集 title；正文解析不受影响
         let input = "---\ntitle: test\n---\nflowchart TD\n    A --> B";
         let ast = parse_flowchart(input).unwrap();
         assert_eq!(ast.kind, DiagramKind::Flowchart);
-        // The parser creates extra nodes from the frontmatter lines (---, title, ---)
-        // but A and B should still be present and connected
-        assert!(ast.nodes.contains_key("A"), "A should exist");
-        assert!(ast.nodes.contains_key("B"), "B should exist");
+        assert_eq!(ast.title.as_deref(), Some("test"));
+        assert_eq!(ast.node_count(), 2, "frontmatter 不产生伪节点");
         assert!(ast.edges.iter().any(|e| e.from == "A" && e.to == "B"), "A --> B edge should exist");
+    }
+
+    // ── CJK / 多字节回归（mask 字节对齐）────────────────────
+
+    #[test]
+    fn test_cjk_labels_in_edge_lines_do_not_panic() {
+        // 回归：mask_bracket_content 曾把多字节标签替成单字节空格 → regex 命中
+        // 字节偏移错位 → parse_edge_line 回原文切片命中 char 中间 panic
+        let input = "flowchart TD\n  开始[启动] --> 结束[完成]";
+        let ast = parse_flowchart(input).unwrap();
+        assert_eq!(ast.node_count(), 2);
+        assert_eq!(ast.nodes.get("开始").unwrap().label, "启动");
+        assert_eq!(ast.nodes.get("结束").unwrap().label, "完成");
+        assert_eq!(ast.edge_count(), 1);
+        assert_eq!(ast.edges[0].from, "开始");
+        assert_eq!(ast.edges[0].to, "结束");
+    }
+
+    #[test]
+    fn test_cjk_pipe_label_edge_line() {
+        let input = "flowchart LR\n  开始[启动] -->|是| 判定{判断}";
+        let ast = parse_flowchart(input).unwrap();
+        assert_eq!(ast.edge_count(), 1);
+        assert_eq!(ast.edges[0].label.as_deref(), Some("是"));
+        assert_eq!(ast.nodes.get("判定").unwrap().shape, NodeShape::Diamond);
+    }
+
+    #[test]
+    fn test_cjk_mixed_ascii_labels_in_edges() {
+        let input = "flowchart TD\n  A[数据源] --> B[(数据库缓存)]";
+        let ast = parse_flowchart(input).unwrap();
+        assert_eq!(ast.edge_count(), 1);
+        assert_eq!(ast.nodes.get("A").unwrap().label, "数据源");
+        assert_eq!(ast.nodes.get("B").unwrap().label, "数据库缓存");
+        assert_eq!(ast.nodes.get("B").unwrap().shape, NodeShape::Cylinder);
+    }
+
+    // ── linkStyle（边形态学覆盖）─────────────────────────────
+
+    #[test]
+    fn test_link_style_dasharray_dashed() {
+        let input = "flowchart LR\n    A --> B\n    B --> C\n    linkStyle 0 stroke-dasharray:6 4";
+        let ast = parse_flowchart(input).unwrap();
+        assert_eq!(ast.edges[0].style, EdgeStyle::Dashed);
+        assert_eq!(ast.edges[1].style, EdgeStyle::Solid, "未命中的边保持实线");
+    }
+
+    #[test]
+    fn test_link_style_short_dasharray_dotted() {
+        let input = "flowchart LR\n    A --> B\n    linkStyle 0 stroke-dasharray:2 2";
+        let ast = parse_flowchart(input).unwrap();
+        assert_eq!(ast.edges[0].style, EdgeStyle::Dotted);
+    }
+
+    #[test]
+    fn test_link_style_default_width_thick() {
+        let input = "flowchart LR\n    A --> B\n    B --> C\n    linkStyle default stroke-width:4px";
+        let ast = parse_flowchart(input).unwrap();
+        assert!(ast.edges.iter().all(|e| e.style == EdgeStyle::Thick), "default 全边覆盖");
+    }
+
+    #[test]
+    fn test_link_style_multiple_indices() {
+        let input = "flowchart LR\n    A --> B\n    B --> C\n    C --> A\n    linkStyle 0,2 stroke-dasharray:6 4";
+        let ast = parse_flowchart(input).unwrap();
+        assert_eq!(ast.edges[0].style, EdgeStyle::Dashed);
+        assert_eq!(ast.edges[1].style, EdgeStyle::Solid);
+        assert_eq!(ast.edges[2].style, EdgeStyle::Dashed);
+    }
+
+    // ── title 采集 ──────────────────────────────────────────
+
+    #[test]
+    fn test_title_directive_sets_ast_title() {
+        let input = "flowchart TD\n    title 我的流程\n    A --> B";
+        let ast = parse_flowchart(input).unwrap();
+        assert_eq!(ast.title.as_deref(), Some("我的流程"));
+        assert_eq!(ast.edge_count(), 1);
     }
 }

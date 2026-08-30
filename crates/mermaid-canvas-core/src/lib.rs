@@ -30,7 +30,7 @@ pub use style::{
     FillStyle, StrokeStyle, Gradient, GradientKind, GradientStop,
     TextStyle, FontWeight, FontStyle, TextAnchor, TextBaseline,
 };
-pub use instruction::{DrawCmd, PathSegment, CanvasOp, RenderOutput};
+pub use instruction::{DrawCmd, PathSegment, CanvasOp, CmdDecor, RenderOutput};
 pub use layer::{LayerKind, Layer, RenderLayers};
 pub use error::CoreError;
 pub use interaction::{HitRegion, BoundingBox, HitResult};

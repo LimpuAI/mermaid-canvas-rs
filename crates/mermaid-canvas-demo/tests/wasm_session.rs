@@ -102,6 +102,8 @@ fn wasm_full_session_lifecycle_across_abi() {
             node_colors: vec!["#123456".to_string(); 6],
             node_stroke: "#abcdef".to_string(),
             title_color: "#ffffff".to_string(),
+            hover_color: None,
+            style_preset: None,
             font_family: "Mono".to_string(),
             base_font_size: 14.0,
             title_font_size: 18.0,

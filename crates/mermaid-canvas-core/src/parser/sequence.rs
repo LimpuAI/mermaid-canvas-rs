@@ -228,6 +228,15 @@ pub fn parse_sequence(input: &str) -> Result<DiagramAst, CoreError> {
             continue;
         }
 
+        // Title → title 层（mermaid sequence 的 title: 指令）
+        if let Some(title) = line.strip_prefix("title:") {
+            let title = title.trim();
+            if !title.is_empty() {
+                ast.title = Some(title.to_string());
+            }
+            continue;
+        }
+
         // End block (for control blocks or rects)
         if line == "end" {
             // Check rect stack first
@@ -599,6 +608,14 @@ static PARTICENT_RE: Lazy<Regex> = Lazy::new(|| {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_title_directive_sets_ast_title() {
+        let input = "sequenceDiagram\n    title: 时序交互\n    participant A\n    A->>B: Hello";
+        let ast = parse_sequence(input).unwrap();
+        assert_eq!(ast.title.as_deref(), Some("时序交互"));
+        assert_eq!(ast.edge_count(), 1);
+    }
 
     #[test]
     fn test_basic_participant_declaration() {

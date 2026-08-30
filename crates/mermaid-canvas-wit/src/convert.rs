@@ -136,10 +136,41 @@ pub fn text_style_to_font_desc(style: &TextStyle) -> WitFontDesc {
             FontWeight::Number(n) => Some(n),
         },
         italic: matches!(style.font_style, FontStyle::Italic),
+        features: None,
     }
 }
 
-/// 内部 DrawCmd 转换为展平的 WIT DrawCmd 列表（v2 无损：corner-radius/font/paint 全量过 ABI）
+/// 装饰通道并入展平指令（Some 才覆盖 — 不清空内层已带的值）
+fn apply_decor(cmd: &mut WitDrawCmd, decor: &mermaid_canvas_core::CmdDecor) {
+    if decor.stroke_width.is_some() {
+        cmd.stroke_width = decor.stroke_width;
+    }
+    if decor.dash.is_some() {
+        cmd.dash = decor.dash.clone();
+    }
+    if decor.line_cap.is_some() {
+        cmd.line_cap = decor.line_cap.clone();
+    }
+    if decor.id.is_some() {
+        cmd.id = decor.id;
+    }
+    if decor.shadow.is_some() {
+        cmd.shadow = decor.shadow.as_ref().map(|s| WitShadowDesc {
+            offset_x: s.offset_x,
+            offset_y: s.offset_y,
+            blur: s.blur,
+            spread: s.spread,
+            color: s.color.clone(),
+            alpha: s.alpha,
+            width: s.width,
+            height: s.height,
+            rotation: s.rotation,
+        });
+    }
+}
+
+/// 内部 DrawCmd 转换为展平的 WIT DrawCmd 列表（v2 无损：corner-radius/font/paint
+/// + Decorated 装饰通道（dash/line-cap/线宽/id）全量过 ABI）
 pub fn draw_cmd_to_wit_draw_cmd_flat(cmd: DrawCmd, depth: u32) -> Vec<WitDrawCmd> {
     match cmd {
         DrawCmd::Rect { x, y, width, height, fill, stroke, corner_radius } => {
@@ -150,10 +181,15 @@ pub fn draw_cmd_to_wit_draw_cmd_flat(cmd: DrawCmd, depth: u32) -> Vec<WitDrawCmd
                 stroke: stroke.and_then(stroke_style_to_paint),
                 stroke_width: None,
                 corner_radius,
+                corner_radii: None,
+                dash: None,
+                line_cap: None,
+                shadow: None,
                 text_content: None,
                 font: None,
                 group_depth: depth,
-                anim: None,
+                id: None,
+                anims: Vec::new(),
             }]
         }
         DrawCmd::Circle { cx, cy, r, fill, stroke } => {
@@ -164,10 +200,15 @@ pub fn draw_cmd_to_wit_draw_cmd_flat(cmd: DrawCmd, depth: u32) -> Vec<WitDrawCmd
                 stroke: stroke.and_then(stroke_style_to_paint),
                 stroke_width: None,
                 corner_radius: None,
+                corner_radii: None,
+                dash: None,
+                line_cap: None,
+                shadow: None,
                 text_content: None,
                 font: None,
                 group_depth: depth,
-                anim: None,
+                id: None,
+                anims: Vec::new(),
             }]
         }
         DrawCmd::Text { x, y, content, style, anchor, baseline } => {
@@ -181,10 +222,15 @@ pub fn draw_cmd_to_wit_draw_cmd_flat(cmd: DrawCmd, depth: u32) -> Vec<WitDrawCmd
                 stroke: None,
                 stroke_width: None,
                 corner_radius: None,
+                corner_radii: None,
+                dash: None,
+                line_cap: None,
+                shadow: None,
                 text_content: Some(content),
                 font: Some(font),
                 group_depth: depth,
-                anim: None,
+                id: None,
+                anims: Vec::new(),
             }]
         }
         DrawCmd::Path { segments, fill, stroke } => {
@@ -209,14 +255,29 @@ pub fn draw_cmd_to_wit_draw_cmd_flat(cmd: DrawCmd, depth: u32) -> Vec<WitDrawCmd
                 stroke: stroke.and_then(stroke_style_to_paint),
                 stroke_width: None,
                 corner_radius: None,
+                corner_radii: None,
+                dash: None,
+                line_cap: None,
+                shadow: None,
                 text_content: None,
                 font: None,
                 group_depth: depth,
-                anim: None,
+                id: None,
+                anims: Vec::new(),
             }]
         }
         DrawCmd::Group { label: _, items } => {
             items.into_iter().flat_map(|c| draw_cmd_to_wit_draw_cmd_flat(c, depth + 1)).collect()
+        }
+        DrawCmd::Decorated { inner, decor } => {
+            // 装饰并入内层展平结果（Group 时应用到全部子指令）
+            draw_cmd_to_wit_draw_cmd_flat(*inner, depth)
+                .into_iter()
+                .map(|mut w| {
+                    apply_decor(&mut w, &decor);
+                    w
+                })
+                .collect()
         }
     }
 }
@@ -257,6 +318,8 @@ pub fn wit_theme_to_record(theme: WitDiagramTheme) -> ThemeRecord {
         node_colors: theme.node_colors,
         node_stroke: theme.node_stroke,
         title_color: theme.title_color,
+        hover_color: theme.hover_color,
+        style_preset: theme.style_preset,
         font_family: theme.font_family,
         base_font_size: theme.base_font_size,
         title_font_size: theme.title_font_size,
@@ -274,6 +337,8 @@ pub fn record_to_wit_theme(record: ThemeRecord) -> WitDiagramTheme {
         node_colors: record.node_colors,
         node_stroke: record.node_stroke,
         title_color: record.title_color,
+        hover_color: record.hover_color,
+        style_preset: record.style_preset,
         font_family: record.font_family,
         base_font_size: record.base_font_size,
         title_font_size: record.title_font_size,
@@ -282,7 +347,7 @@ pub fn record_to_wit_theme(record: ThemeRecord) -> WitDiagramTheme {
 }
 
 /// Layout 节点 → 命中区列表（按 BTreeMap key 过滤序列图激活框等内部节点；
-/// key 序 = 稳定索引）
+/// key 序 = 稳定索引；hover 声明由 session 按 preset 档位补充）
 pub fn layout_to_hit_regions(layout: &Layout) -> Vec<WitHitRegion> {
     layout.nodes
         .iter()
@@ -295,6 +360,7 @@ pub fn layout_to_hit_regions(layout: &Layout) -> Vec<WitHitRegion> {
             bounds_y: nl.bounds.y,
             bounds_w: nl.bounds.width,
             bounds_h: nl.bounds.height,
+            hover: None,
         })
         .collect()
 }
@@ -328,7 +394,7 @@ mod tests {
         assert_eq!(w.fill, Some(WitPaint::Solid("#ff0000".to_string())));
         assert_eq!(w.stroke, Some(WitPaint::Solid("#000000".to_string())));
         assert!(w.text_content.is_none());
-        assert!(w.anim.is_none());
+        assert!(w.anims.is_empty());
         assert_eq!(w.group_depth, 0);
     }
 
@@ -819,6 +885,8 @@ mod tests {
             node_colors: vec!["#1".into(); 6],
             node_stroke: "#999999".into(),
             title_color: "#ffffff".into(),
+            hover_color: Some("#ffffff".into()),
+            style_preset: Some("signal-flow".into()),
             font_family: "Mono".into(),
             base_font_size: 13.0,
             title_font_size: 17.0,
@@ -830,9 +898,65 @@ mod tests {
     }
 
     #[test]
-    fn test_builtin_record_to_wit_theme_has_six_slots() {
+    fn test_builtin_record_theme_v2_fields_default_none() {
+        // 内置主题不声明 preset/hover 色 — v2 新字段缺省 None（= classic）
+        let wit = record_to_wit_theme(builtin_theme_record("default").unwrap());
+        assert_eq!(wit.hover_color, None);
+        assert_eq!(wit.style_preset, None);
+    }
+
+    // ─── Decorated 装饰通道投影（v2）──────────────────────────
+
+    #[test]
+    fn test_decorated_path_carries_dash_linecap_id() {
+        let cmd = DrawCmd::Decorated {
+            inner: Box::new(DrawCmd::Path {
+                segments: vec![PathSegment::MoveTo(0.0, 0.0), PathSegment::LineTo(10.0, 0.0)],
+                fill: None,
+                stroke: Some(StrokeStyle::Color("#333".into())),
+            }),
+            decor: mermaid_canvas_core::CmdDecor {
+                stroke_width: Some(2.5),
+                dash: Some(vec![6.0, 4.0]),
+                line_cap: Some("round".to_string()),
+                shadow: None,
+                id: Some(3),
+            },
+        };
+        let result = draw_cmd_to_wit_draw_cmd_flat(cmd, 0);
+        assert_eq!(result.len(), 1);
+        let w = &result[0];
+        assert_eq!(w.cmd_type, "path");
+        assert_eq!(w.stroke_width, Some(2.5));
+        assert_eq!(w.dash, Some(vec![6.0, 4.0]));
+        assert_eq!(w.line_cap.as_deref(), Some("round"));
+        assert_eq!(w.id, Some(3));
+        assert!(w.anims.is_empty());
+    }
+
+    #[test]
+    fn test_decorated_partial_decor_does_not_clear_rest() {
+        // 装饰通道部分字段 — 未声明的不覆盖
+        let cmd = DrawCmd::Decorated {
+            inner: Box::new(DrawCmd::Rect {
+                x: 0.0, y: 0.0, width: 10.0, height: 10.0,
+                fill: None, stroke: None, corner_radius: Some(4.0),
+            }),
+            decor: mermaid_canvas_core::CmdDecor {
+                id: Some(1),
+                ..Default::default()
+            },
+        };
+        let result = draw_cmd_to_wit_draw_cmd_flat(cmd, 0);
+        assert_eq!(result[0].id, Some(1));
+        assert_eq!(result[0].stroke_width, None);
+        assert_eq!(result[0].corner_radius, Some(4.0));
+    }
+
+    #[test]
+    fn test_builtin_record_to_wit_theme_has_seven_slots() {
         let wit = record_to_wit_theme(builtin_theme_record("forest").unwrap());
-        assert_eq!(wit.node_colors.len(), 6);
+        assert_eq!(wit.node_colors.len(), 7);
         assert_eq!(wit.background, "#1b2a1b");
         assert_eq!(wit.margin, WitMargin::from(Margin::all(20.0)));
     }

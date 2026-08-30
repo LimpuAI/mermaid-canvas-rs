@@ -156,6 +156,23 @@ impl TinySkiaRenderer {
                     self.render_cmd(item);
                 }
             }
+            DrawCmd::Decorated { inner, decor } => {
+                // 装饰指令：线宽注入内层描边（dash/line_cap 原生路径暂不消费）
+                match inner.as_ref() {
+                    DrawCmd::Rect { x, y, width, height, fill, stroke, corner_radius } => {
+                        self.draw_rect(*x, *y, *width, *height, fill, stroke, corner_radius, decor.stroke_width);
+                    }
+                    DrawCmd::Path { segments, fill, stroke } => {
+                        self.draw_path(segments, fill, stroke, decor.stroke_width);
+                    }
+                    DrawCmd::Circle { cx, cy, r, fill, stroke } => {
+                        self.draw_circle(*cx, *cy, *r, fill, stroke, decor.stroke_width);
+                    }
+                    other => {
+                        self.render_cmd(other);
+                    }
+                }
+            }
         }
     }
 

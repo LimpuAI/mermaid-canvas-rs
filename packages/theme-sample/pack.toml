@@ -1,0 +1,11 @@
+# theme-sample 的打包描述（纯资产包——无 crates，仅 theme 资产）。
+# 产物即本目录（plugin.toml + assets/）；pack.toml 使 aixpack
+# verify/lint 可机械校验该包（--package 指向本目录）。
+[pack]
+id = "linktime/theme-sample"
+version = "0.1.0"
+targets = ["echodawn", "antimass"]
+summary = "host theme asset sample (ThemeAsset capture)"
+
+[pack.assets]
+theme = ["assets/theme.json"]

@@ -1,0 +1,16 @@
+# aixpack（LimpuAI/aixpack）打包描述。
+# 契约：LimpuAI/aixpack docs/plugin-package.md；一条链产标准插件包：
+#   build → manifest → pkg --zip → verify
+[pack]
+id = "limpuai/mermaid-canvas-rs"      # {org}/{repo-name}（LimpuAI org，与仓库名对齐）
+version = "0.1.0"                       # 对齐 workspace.package.version
+world = "mermaid:viz@3.0.0"             # 组件实现的 world（verify ⊆ 登记处 + WIT 双侧一致）
+# [plugin.ui.providers] 域键。宿主侧 map_provider_domain 对完整 interface-id
+# （mermaid:viz/diagram-renderer@3.0.0）与末段（diagram-renderer）均宽容命中
+# Diagram 域；CLI 亦接受完整 interface-id 形态，此处取 design §4 示例的末段形态
+# （与 design §4 示例 domain_key = "math-renderer" 同款约定）。
+domain_key = "diagram-renderer"
+summary = "Mermaid diagram renderer (flowchart/class/state/ER/requirement/packet/sequence)"
+description = "Backend-agnostic Mermaid diagram renderer emitting Canvas 2D instruction sequences (mermaid:viz@3.0.0, canvas@2.0.0 window)."
+crates = ["crates/mermaid-canvas-wit-wasm"]
+targets = ["echodawn", "antimass"]

@@ -1,0 +1,39 @@
+# 主题资产包试点（T22）— 纯资产包：无 wasm 组件，只有宿主主题资产。
+#
+# 两层主题的注记（勘察结论）：
+# - mermaid 图内主题 = diagram-theme record（6 语义色槽 shape_slot 体系 +
+#   hover-color / style-preset），经组件 `set-theme` 方法在**图内**注入——
+#   本仓 themes/ 体系（见 docs/theming.md）。
+# - 宿主主题 = echodawn ThemeAsset（完整 DesignTokens 4D 快照：VisualSystem ×
+#   ColorMode × A11yMode + token 树），经宿主 ThemeManager carrier 接管**整个
+#   应用外观**。
+# - 两者不可互映射（6 色槽无法重建 DesignTokens 树；反向派生是宿主注入期的
+#   职责，不是包格式的事）。本包示范的是**宿主主题包的 assets 链路**：
+#   [plugin.theme] file → assets/theme.json → 宿主侧 ThemeAsset::read_file。
+#
+# theme.json 由 echodawn 的 capture 机制生成（ThemeAsset::capture 产物样例，
+# Default/Light/Normal 坐标），格式版本 format=1。
+#
+# 组包方式说明：component-pack CLI 当前要求包内必有 components/*.wasm（pkg
+# 布局 lint 对无组件包红）——纯资产包形态合法但 CLI 暂不支持，本包为手工
+# 组包（目录形态即分发形态，与 zip 解压后同构）。
+[plugin]
+name = "theme-sample"
+author = "linktime"
+version = "0.1.0"
+description = "Host theme asset sample pack (ThemeAsset capture: Default/Light/Normal). Demonstrates the plugin-package assets chain; mermaid in-diagram themes are a separate layer."
+
+[plugin.theme]
+file = "assets/theme.json"
+
+# 保留段空骨架（写入方仅安装器——见 echodawn-rs docs/plugin-package.md §3）
+[plugin.compat]
+antimass = ""
+echodawn = ""
+
+[plugin.source]
+registry = ""
+index_url = ""
+installed_from = ""
+installed_at = ""
+pinned_version = ""

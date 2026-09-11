@@ -22,3 +22,6 @@ target
 
 # Sisyphus
 .sisyphus/
+
+# component-pack 产物（build/manifest/pkg 产 dist/，不入库）
+dist/

@@ -47,8 +47,11 @@ fontdue = "0.9"
 softbuffer = "0.4"
 raw-window-handle = "0.6"
 
-wasmtime = "44"
-wasmtime-wasi = "44"
+# wasmtime 48：与 echodawn-rs 宿主同版本（48.0.1）。
+# WASI 0.3 引擎层默认支持（46+）；wasmtime-wasi 默认 features 仍是 p1+p2 双栈，
+# 组件经 p2::add_to_linker_sync 接线（wasi:io/poll 由 p2 sync linker 覆盖）。
+wasmtime = "48"
+wasmtime-wasi = "48"
 ab_glyph = "0.2"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

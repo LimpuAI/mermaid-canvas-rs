@@ -1,6 +1,6 @@
 //! mermaid-canvas-wit-wasm: WASI Component Model 导出层（v3 — canvas@2.0.0 窗口）
 //!
-//! 使用 wit-bindgen 0.57 从 world.wit 生成 guest 绑定，
+//! 使用 wit-bindgen 0.57 从 mermaid-viz.wit 生成 guest 绑定，
 //! 将 mermaid-canvas-wit 的功能导出为标准 WASI Component。
 //!
 //! v3：绘制词汇表升级至 echodawn:canvas@2.0.0/draw（Tier2 七通道/多轨道/

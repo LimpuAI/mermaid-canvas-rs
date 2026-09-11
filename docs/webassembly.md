@@ -43,7 +43,7 @@ cargo build --release --target wasm32-wasip2
 ### 输出路径
 
 ```
-target/wasm32-wasip2/release/mermaid_canvas_viz.wasm
+target/wasm32-wasip2/release/mermaid_canvas_wit_wasm.wasm
 ```
 
 ### 组件大小
@@ -114,7 +114,7 @@ use wasmtime::Engine;
 
 // 从文件加载组件
 let engine = Engine::default();
-let host = WasmHost::from_file(&engine, "path/to/mermaid_canvas_viz.wasm")?;
+let host = WasmHost::from_file(&engine, "path/to/mermaid_canvas_wit_wasm.wasm")?;
 ```
 
 ### 渲染图表

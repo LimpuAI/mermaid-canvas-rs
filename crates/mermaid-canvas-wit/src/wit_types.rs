@@ -1,4 +1,4 @@
-//! WIT 类型定义（v2 — 与 world.wit / canvas.wit 中的 record 一一对应）
+//! WIT 类型定义（v2 — 与 mermaid-viz.wit / canvas.wit 中的 record 一一对应）
 
 use mermaid_canvas_component::Margin;
 

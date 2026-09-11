@@ -42,7 +42,7 @@ let result = mermaid_canvas_wit::render(
 // result.layers contains WitDrawCmd — render with any Canvas 2D backend
 ```
 
-**Native path (v2 stateful session):**
+**Native path (v3 stateful session):**
 
 ```rust
 use mermaid_canvas_wit::session::DiagramSession;
@@ -59,7 +59,7 @@ session.update_source("flowchart LR\n    X --> Y".to_string())?;  // re-parse + 
 session.resize(400.0, 0.0);             // fit-to-width (shrink only)
 ```
 
-**WASM Component (v2 resource session):**
+**WASM Component (v3 resource session):**
 
 ```bash
 # Build WASI Component (~1.8MB release)
@@ -129,7 +129,7 @@ cargo run --bin demo-themes -- --output ./themes
 │    │ Direct Path  │         │   WASM Path      │    │
 │    │DiagramSession│         │ wasmtime Host    │    │
 │    └──────┬───────┘         └───────┬──────────┘    │
-│           │                        │ mermaid:viz@2.0.0
+│           │                        │ mermaid:viz@3.0.0
 │           ▼                        ▼ resource session
 │    DrawCmd (native)    WitDrawCmd (WASM boundary)    │
 │           │                          │               │
@@ -140,12 +140,14 @@ cargo run --bin demo-themes -- --output ./themes
 └─────────────────────────────────────────────────────┘
 ```
 
-## WIT Protocol (v2 — resource session)
+## WIT Protocol (v3 — resource session)
 
-The component exports `mermaid:viz@2.0.0/diagram-renderer` with a stateful
-`diagram` resource (constructor + six methods), using the shared
-`echodawn:canvas@1.0.0/draw` vocabulary for lossless draw commands
-(corner-radius / font-desc / paint incl. linear gradients / anim-desc channel):
+The component exports `mermaid:viz@3.0.0/diagram-renderer` with a stateful
+`diagram` resource (constructor + six methods, session shape unchanged from
+v2), using the shared `echodawn:canvas@2.0.0/draw` vocabulary for lossless
+draw commands (Tier2 anim-desc multi-track / dash / line-cap / per-corner
+radii / font-desc with font features / paint incl. linear gradients /
+command ids / hover-effect):
 
 | Method | Semantics |
 |--------|-----------|
@@ -153,9 +155,9 @@ The component exports `mermaid:viz@2.0.0/diagram-renderer` with a stateful
 | `update-source(source)` | re-parse + re-layout + replay enter phase |
 | `resize(width, height)` | fit-to-width constraint (shrink only; diagram size is content-adaptive) |
 | `set-state(state)` | hover brighten / selected outline (immediate) |
-| `set-theme(theme)` | apply theme record (6 semantic color slots via `shape_slot`) |
+| `set-theme(theme)` | apply theme record (6 semantic color slots via `shape_slot`, plus `hover-color` and shape-axis `style-preset`: classic/signal-flow/blueprint/editorial — colors always come from host token injection slots) |
 | `render(t)` | Tier 1 semantic phase: `t=1` exact steady state; `t∈[0,1)` enter stagger (nodes fade+grow, edges/labels fade); `disable` renders steady at any `t` |
-| `hit-regions()` | node AABBs with node-id payload (host-side hit test, zero wasm calls) |
+| `hit-regions()` | node AABBs with node-id payload + optional declarative `hover-effect` (host-rendered; zero wasm calls per hit test) |
 
 ## Build & Test
 
@@ -173,9 +175,24 @@ cargo build -p mermaid-canvas-wit-wasm --target wasm32-wasip2 --release
 cargo clippy --workspace
 ```
 
+## Packaging (standard plugin package)
+
+宿主应用装载的标准插件包由 [aixpack](https://github.com/LimpuAI/aixpack)（LimpuAI 生态工具链，`cargo install --git https://github.com/LimpuAI/aixpack`）从本仓 `pack.toml` 产出：
+
+```bash
+aixpack --root <本仓> build       # wasip2 release 组件 → dist/staging/
+aixpack --root <本仓> pkg --zip   # dist/<author>--<name>/ + 标准包 zip（唯一顶层）
+aixpack --root <本仓> verify --wit-root crates/mermaid-canvas-wit/wit   --contracts-root <契约仓> --registry-root <登记处仓>
+```
+
+verify 三查：WIT 双侧一致（本仓 `crates/mermaid-canvas-wit/wit/mermaid-viz.wit` ↔ 契约权威副本）/ world ⊆ 扩展点登记处 / 包内哈希三方一致。主题资产包试点见 `packages/theme-sample/`（纯资产包，同为 aixpack 布局）。
 
 ## License
 
 Licensed under the [MIT License](LICENSE).
 
 Copyright (c) 2026 StarEcho Pte. Ltd.
+
+快捷脚本：`scripts/verify-package.sh`（提交前三查门禁）、`scripts/install-hooks.sh`（pre-commit 安装器）。
+
+工具链安装：`cargo install --git https://github.com/LimpuAI/aixpack`（安装后 `scripts/verify-package.sh` 自动优先 PATH；未安装时兜底兄弟 checkout 构建产物）。

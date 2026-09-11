@@ -253,6 +253,20 @@ fn bg_to_wit_paint(p: BgPaint) -> WitPaint {
     }
 }
 
+fn bg_to_wit_shadow(s: echodawn::canvas::draw::ShadowDesc) -> WitShadowDesc {
+    WitShadowDesc {
+        offset_x: s.offset_x,
+        offset_y: s.offset_y,
+        blur: s.blur,
+        spread: s.spread,
+        color: s.color,
+        alpha: s.alpha,
+        width: s.width,
+        height: s.height,
+        rotation: s.rotation,
+    }
+}
+
 fn bg_to_wit_draw_cmd(c: BgDrawCmd) -> WitDrawCmd {
     WitDrawCmd {
         cmd_type: c.cmd_type,
@@ -264,6 +278,7 @@ fn bg_to_wit_draw_cmd(c: BgDrawCmd) -> WitDrawCmd {
         corner_radii: c.corner_radii,
         dash: c.dash,
         line_cap: c.line_cap,
+        shadow: c.shadow.map(bg_to_wit_shadow),
         text_content: c.text_content,
         font: c.font.map(|f| WitFontDesc {
             family: f.family,

@@ -43,7 +43,7 @@
   "navbar": {
     "primary": {
       "type": "github",
-      "href": "https://github.com/linktime/mermaid-canvas-rs"
+      "href": "https://github.com/LimpuAI/mermaid-canvas-rs"
     }
   }
 }

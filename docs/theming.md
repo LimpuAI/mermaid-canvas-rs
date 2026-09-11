@@ -376,3 +376,24 @@ cargo run --bin demo-themes -- --output ./themes
 - 判断节点永远是菱形（accent 色槽）
 - 数据库节点永远是圆柱（data 色槽）
 - 主题只改变具体的颜色值，不改变语义映射
+
+## 与宿主主题（ThemeAsset）的关系 — 两层注记
+
+mermaid 的「主题」是**图内主题**：`diagram-theme` record（6 语义色槽的
+`shape_slot` 体系 + `hover-color` / `style-preset`），经组件 `set-theme`
+方法注入，只作用于图表内部的配色。宿主（echodawn / AntiMass）的「主题」
+是 **ThemeAsset**：一份完整的 DesignTokens 4D 快照（VisualSystem ×
+ColorMode × AccessibilityMode + token 树），经宿主 ThemeManager carrier
+接管整个应用的外观。两者是两层，不可互映射：
+
+- 6 色槽无法重建 DesignTokens 树（缺排版/间距/运动/材质等上百个 token）；
+- 反方向（宿主 token 派生图内 6 色槽）是宿主在**注入期**的派生职责
+  （mermaid:viz@3.0.0 的主题注入槽位语义），不是包格式层面的转换。
+
+[`packages/theme-sample/`](../packages/theme-sample/) 是**宿主主题资产包**
+的试点：`plugin.toml` 的 `[plugin.theme] file` 指向 `assets/theme.json`
+（echodawn `ThemeAsset::capture` 机制生成的样例，format=1），示范标准插件
+包的 assets 链路（发现 → `[plugin.theme]` → 宿主侧 `ThemeAsset::read_file`）。
+它是纯资产包（无 wasm 组件）——aixpack 的 `pkg`/`verify` 已支持纯资产包形态
+（`scripts/verify-package.sh` 可机械校验）。图内主题的注入仍走本文档描述的
+`set-theme` 路径，与本资产包互不替代。

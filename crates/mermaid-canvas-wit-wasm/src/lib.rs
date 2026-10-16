@@ -26,7 +26,8 @@ use echodawn::canvas::draw::{
     AnimDesc as BgAnimDesc, AnimProperty as BgAnimProperty, DrawCmd as BgDrawCmd,
     ShadowDesc as BgShadowDesc,
     FontDesc as BgFontDesc, GradientStop as BgGradientStop, HoverEffect as BgHoverEffect,
-    Keyframe as BgKeyframe, Layer as BgLayer, LinearGradient as BgLinearGradient,
+    BlendMode as BgBlendMode, Keyframe as BgKeyframe, Layer as BgLayer,
+    LayerOpts as BgLayerOpts, LinearGradient as BgLinearGradient,
     LoopMode as BgLoopMode, Paint as BgPaint,
 };
 
@@ -142,6 +143,19 @@ fn wit_layer_to_bindgen(l: WitLayer) -> BgLayer {
         dirty: l.dirty,
         z_index: l.z_index,
         commands: l.commands.into_iter().map(wit_draw_cmd_to_bindgen).collect(),
+        opts: l.opts.map(|o| BgLayerOpts {
+            opacity: o.opacity,
+            blend: o.blend.map(|b| match b.as_str() {
+                "normal" => BgBlendMode::Normal,
+                "screen" => BgBlendMode::Screen,
+                "lighter" => BgBlendMode::Lighter,
+                "multiply" => BgBlendMode::Multiply,
+                "overlay" => BgBlendMode::Overlay,
+                "soft-light" => BgBlendMode::SoftLight,
+                other => panic!("未知混合模式 `{other}`（canvas@2.1.0 闭集漂移）"),
+            }),
+            clip: o.clip,
+        }),
     }
 }
 
@@ -167,6 +181,9 @@ fn wit_draw_cmd_to_bindgen(c: WitDrawCmd) -> BgDrawCmd {
         group_depth: c.group_depth,
         id: c.id,
         anims: c.anims.into_iter().map(wit_anim_to_bindgen).collect(),
+        fill_gradient_along: c.fill_gradient_along.map(|stops| {
+            stops.into_iter().map(|g| BgGradientStop { pos: g.pos, color: g.color }).collect()
+        }),
     }
 }
 

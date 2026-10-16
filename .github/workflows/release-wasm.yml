@@ -1,0 +1,58 @@
+# release-wasm —— 内置 viz 插件包发布（packaging-release：AntiMass 经
+# builtin-plugins.toml 版本锁定拉取本 Release 资产）。
+#
+# tag `pack-v*` 触发：aixpack build → pkg --zip（确定性 zip，唯一顶层目录）
+# → scripts/verify-package.sh（aixpack verify 三查：WIT 双侧一致 +
+# 包内 hashes 三方一致；contracts 权威 = echodawn-rs v0.1.0 checkout）
+# → 本仓 GitHub Release 资产 `dist/{name}-{version}.zip`。
+#
+# 可复现锚：aixpack pin v0.1.0；echodawn-rs contracts pin v0.1.0——
+# 两者随 WIT 再同步轮一并升级（与 vendored 副本同源同版）。
+name: release-wasm
+
+on:
+  push:
+    tags: ['pack-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
+
+      - name: Install aixpack (pinned v0.1.0)
+        run: cargo install --git https://github.com/LimpuAI/aixpack --tag v0.1.0 --locked
+
+      - name: Checkout upstream echodawn-rs (contracts authority, pinned v0.1.0)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/echodawn-rs
+          ref: v0.1.0
+          path: upstream/echodawn-rs
+
+      - name: Build component (wasm32-wasip2, aixpack unified profile)
+        run: aixpack --root . build
+
+      - name: Package deterministic zip
+        run: aixpack --root . pkg --zip
+
+      - name: Verify (WIT 双侧一致 + 包内 hashes 三方一致)
+        run: bash scripts/verify-package.sh
+        env:
+          CONTRACTS_ROOT: ${{ github.workspace }}/upstream/echodawn-rs
+          # 扩展点登记处（Antimass 仓）不在席——该查缺省 warn 跳过
+          REGISTRY_ROOT: ""
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          generate_release_notes: true

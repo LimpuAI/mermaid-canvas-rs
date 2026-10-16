@@ -36,6 +36,7 @@ jobs:
         with:
           repository: ${{ github.repository_owner }}/echodawn-rs
           ref: v0.1.0
+          token: ${{ secrets.UPSTREAM_TOKEN }}   # echodawn-rs 私有仓——默认 token 无权跨仓
           path: upstream/echodawn-rs
 
       - name: Build component (wasm32-wasip2, aixpack unified profile)

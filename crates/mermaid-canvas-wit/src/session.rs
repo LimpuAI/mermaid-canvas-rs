@@ -970,6 +970,7 @@ fn pulse_pill_layer(
         font: None,
         group_depth: 0,
         id: None,
+        fill_gradient_along: None,
         anims: vec![
             WitAnimDesc {
                 property: WitAnimProperty::TranslateX,

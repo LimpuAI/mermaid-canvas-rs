@@ -190,6 +190,7 @@ pub fn draw_cmd_to_wit_draw_cmd_flat(cmd: DrawCmd, depth: u32) -> Vec<WitDrawCmd
                 group_depth: depth,
                 id: None,
                 anims: Vec::new(),
+                fill_gradient_along: None,
             }]
         }
         DrawCmd::Circle { cx, cy, r, fill, stroke } => {
@@ -209,6 +210,7 @@ pub fn draw_cmd_to_wit_draw_cmd_flat(cmd: DrawCmd, depth: u32) -> Vec<WitDrawCmd
                 group_depth: depth,
                 id: None,
                 anims: Vec::new(),
+                fill_gradient_along: None,
             }]
         }
         DrawCmd::Text { x, y, content, style, anchor, baseline } => {
@@ -231,6 +233,7 @@ pub fn draw_cmd_to_wit_draw_cmd_flat(cmd: DrawCmd, depth: u32) -> Vec<WitDrawCmd
                 group_depth: depth,
                 id: None,
                 anims: Vec::new(),
+                fill_gradient_along: None,
             }]
         }
         DrawCmd::Path { segments, fill, stroke } => {
@@ -264,6 +267,7 @@ pub fn draw_cmd_to_wit_draw_cmd_flat(cmd: DrawCmd, depth: u32) -> Vec<WitDrawCmd
                 group_depth: depth,
                 id: None,
                 anims: Vec::new(),
+                fill_gradient_along: None,
             }]
         }
         DrawCmd::Group { label: _, items } => {
@@ -305,6 +309,7 @@ pub fn layer_to_wit_layer(layer: Layer) -> WitLayer {
         dirty: layer.dirty,
         z_index: layer.z_index,
         commands,
+        opts: None,
     }
 }
 

@@ -234,6 +234,7 @@ fn bg_to_wit_layer(l: BgLayer) -> WitLayer {
         dirty: l.dirty,
         z_index: l.z_index,
         commands: l.commands.into_iter().map(bg_to_wit_draw_cmd).collect(),
+        opts: None,
     }
 }
 
@@ -290,6 +291,7 @@ fn bg_to_wit_draw_cmd(c: BgDrawCmd) -> WitDrawCmd {
         id: c.id,
         // 宿主侧不消费 Tier 2 anims（wasm 侧 SignalFlow 呼吸才附着；此处展平为空）
         anims: Vec::new(),
+        fill_gradient_along: None,
     }
 }
 

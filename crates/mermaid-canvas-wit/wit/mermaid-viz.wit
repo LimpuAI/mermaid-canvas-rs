@@ -1,7 +1,7 @@
 package mermaid:viz@3.0.0;
 
-/// v3 变更（相对 2.0.0，canvas@2.0.0 窗口）:
-/// - 绘制词汇表升级至 `echodawn:canvas@2.0.0/draw`（Tier2 七通道/多轨道/
+/// v3 变更（相对 2.0.0，canvas@2.1.0 窗口）:
+/// - 绘制词汇表升级至 `echodawn:canvas@2.1.0/draw`（Tier2 七通道/多轨道/
 ///   dash/line-cap/per-corner/font features/命令 id/hover-effect）
 /// - hit-region 增 `hover: option<hover-effect>`（声明式 hover，宿主渲染）
 /// - diagram-theme 增 `hover-color`（hover 提亮语义色）与 `style-preset`
@@ -10,7 +10,7 @@ package mermaid:viz@3.0.0;
 /// - 会话形状不变：constructor + 六方法零增删
 
 interface diagram-renderer {
-    use echodawn:canvas/draw@2.0.0.{draw-cmd, layer, anim-desc, hover-effect};
+    use echodawn:canvas/draw@2.1.0.{draw-cmd, layer, anim-desc, hover-effect};
 
     record margin { top: f64, right: f64, bottom: f64, left: f64 }
 

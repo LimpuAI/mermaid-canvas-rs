@@ -1,12 +1,18 @@
-package echodawn:canvas@2.0.0;
+/// echodawn:canvas 共享绘制词汇表 v2.1(canvas-drawing-plugins spec T16,
+/// design D9:字段增量 —— 词汇表封闭纪律不破,新增字段 ≠ 开放词汇表)。
+///
+/// v2.1 变更(相对 2.0.0,单版本就地升位,不做兼容层):
+/// - `layer-opts`:层不透明度 / 混合模式 / 层裁剪(host: opacity/clip 经
+///   StateStack 层包裹实现;blend 为 offscreen 层合成落地前的**语义预留**,
+///   宿主诚实降级 warn + 按普通层渲染)
+/// - `draw-cmd.fill-gradient-along`:沿路径弧长渐变填充(宿主
+///   `fill_path_gradient_along` 分段近似渲染)
+/// - 双侧同步纪律:四个 provider 域与 widget 同步 re-vendor + 重发布构件
+///   (旧构件经 introspect 门禁以结构化诊断拒绝——这是设计行为)
+package echodawn:canvas@2.1.0;
 
 interface draw {
-    // ---- Tier 2 参数动画（宿主本地插值，零 wasm 调用）----
-    //
-    // v2 变更（相对 1.0.0）:
-    // - anim-property 从仅 opacity 扩展为七通道（transform 组 + color + stroke-width）
-    // - anim-desc 单轨道 → draw-cmd.anims 多轨道列表（同一指令可同时动画多属性）
-    // - color 通道为标量因子模型：keyframe value 0=基色 1=alt-color（宿主 clamp [0,1]）
+    // ---- Tier 2 参数动画(与 2.0.0 逐字段一致;定义单源在本包) ----
     enum anim-property {
         opacity,
         translate-x,
@@ -24,86 +30,76 @@ interface draw {
         duration-ms: u32,
         delay-ms: u32,
         loop: loop-mode,
-        /// color 属性专用：因子 0=指令基色 1=alt-color；其余属性忽略
         alt-color: option<string>,
     }
 
-    // ---- 无损绘制描述 ----
-    //
-    // v2 变更（相对 1.0.0）:
-    // - corner-radii per-corner（TL/TR/BR/BL；与 corner-radius 同存时优先）
-    // - dash 虚线节律 + line-cap 线端帽（AST EdgeStyle 类语义的词汇补齐）
-    // - font-desc 增 features 通道（"tabular-nums" 等 OpenType features）
-    // - id 命令身份 = 所属 hit-region index（一对多；宿主 per-item 效果关联键）
+    // ---- 无损绘制描述(与 2.0.0 逐字段一致) ----
     record font-desc {
         family: option<string>,
         weight: option<u16>,
         italic: bool,
-        /// OpenType features（"tabular-nums" 等；宿主文本布局消费）
         features: option<list<string>>,
     }
     record gradient-stop { pos: f64, color: string }
     record linear-gradient { x0: f64, y0: f64, x1: f64, y1: f64, stops: list<gradient-stop> }
     variant paint { solid(string), gradient(linear-gradient) }
-    /// 外阴影描述（CSS box-shadow 外阴影子集；宿主 SDF 高斯软阴影 pass 渲染，
-    /// 忌以实体描边/填充模拟——硬边阴影在入场缩放下呈厚重黑框）
     record shadow-desc {
-        /// x 偏移（px；正值向右）
         offset-x: f64,
-        /// y 偏移（px；正值向下）
         offset-y: f64,
-        /// 模糊半径（px；0 = 硬边）
         blur: f64,
-        /// 扩散（px；正值扩张阴影轮廓，负值收缩）
         spread: f64,
-        /// 阴影基色（hex/rgb/rgba 字符串；透明度以 alpha 字段为准）
         color: string,
-        /// 阴影不透明度（0-1；最终 alpha = color 自身 alpha × alpha）
         alpha: f64,
-        /// 阴影形状宽（px；绕宿主形状中心）。path 指令缺省 (0,0) = 包围盒；
-        /// 菱形等对角形状显式声明内接正方形 + rotation 45 即得真实轮廓阴影
         width: f64,
-        /// 阴影形状高（px；语义同 width）
         height: f64,
-        /// 阴影形状旋转角（度；顺时针，绕宿主形状中心）
         rotation: f64,
     }
     record draw-cmd {
-        cmd-type: string,        // "rect" | "path" | "circle" | "arc" | "text"
-        params: list<f64>,       // 与 deneb v2 语义逐字段一致；baseline 1=Middle/2=Bottom 按整块布局盒换算（多行 \n 块级锚定，宿主 translate 是唯一换算防线）
+        cmd-type: string,
+        params: list<f64>,
         fill: option<paint>,
         stroke: option<paint>,
         stroke-width: option<f64>,
         corner-radius: option<f64>,
-        /// per-corner 圆角（TL, TR, BR, BL）；与 corner-radius 同存时优先
         corner-radii: option<tuple<f64, f64, f64, f64>>,
-        /// 虚线节律（线段/间隙交替，px）；缺省或空 = 实线
         dash: option<list<f64>>,
-        /// 线端帽："butt" | "round" | "square"；缺省 butt
         line-cap: option<string>,
-        /// 外阴影（rect/circle/path 支持；path 以包围盒近似；缺省无阴影）。
-        /// 阴影统一绘制于全部形状之前的专用 shadow pass（z 序 = 所有形状之下）
         shadow: option<shadow-desc>,
         text-content: option<string>,
         font: option<font-desc>,
         group-depth: u32,
-        /// 命令身份：所属 hit-region index（一对多；宿主 per-item 效果关联键）
         id: option<u32>,
-        /// Tier 2 多轨道动画（v2 起替代 v1 的单 anim 字段）
         anims: list<anim-desc>,
+        /// v2.1:沿路径弧长渐变填充(pos ∈ [0,1] 弧长参数;color 与 paint
+        /// 同源解析)。仅 path 指令消费;与 fill 同存时优先
+        fill-gradient-along: option<list<gradient-stop>>,
     }
-    record layer { kind: string, dirty: bool, z-index: u32, commands: list<draw-cmd> }
 
-    // ---- 声明式 hover 效果（各 world 的 hit-region 引用；宿主渲染，零 wasm 调用）----
-    //
-    // 提供方声明命中区的 hover 视觉语义，宿主对 draw-cmd.id == region.index
-    // 的指令采样应用 —— 与 set-state(Tier 1 过渡) 并存的可选声明式路径。
-    record hover-effect {
-        /// "brighten"（params[0]=幅度 0-1）| "scale"（params[0]=倍率增量）
-        /// | "lift"（params[0]=上移 px）| "outline"（params[0]=描边宽）
-        /// | "glow"（params[0]=辉光强度）— 未知 kind 宿主 warn + 跳过
+    // ---- v2.1:混合模式闭集(宿主 BlendMode 家族子集) ----
+    enum blend-mode { normal, screen, lighter, multiply, overlay, soft-light }
+
+    /// v2.1:层级绘制选项
+    record layer-opts {
+        /// 层不透明度(0-1;None = 1)
+        opacity: option<f64>,
+        /// 层混合模式(缺省 normal;offscreen 合成落地前宿主 warn + normal 渲染)
+        blend: option<blend-mode>,
+        /// 层裁剪 [x, y, w, h](px;None = 不裁剪)
+        clip: option<tuple<f64, f64, f64, f64>>,
+    }
+
+    record layer {
         kind: string,
-        /// kind 语义参数；时长固定走宿主 hover 过渡档（150ms）
+        dirty: bool,
+        z-index: u32,
+        commands: list<draw-cmd>,
+        /// v2.1:层级绘制选项(缺省全 None = 普通层)
+        opts: option<layer-opts>,
+    }
+
+    // ---- 声明式 hover 效果(与 2.0.0 逐字段一致) ----
+    record hover-effect {
+        kind: string,
         params: list<f64>,
     }
 }

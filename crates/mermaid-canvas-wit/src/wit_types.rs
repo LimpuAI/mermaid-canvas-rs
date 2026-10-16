@@ -177,6 +177,20 @@ pub struct WitDrawCmd {
     pub id: Option<u32>,
     /// Tier 2 多轨道动画（v2 起替代 v1 的单 anim 字段；SignalFlow preset 呼吸动效附着）
     pub anims: Vec<WitAnimDesc>,
+    /// canvas@2.1.0：沿路径弧长渐变填充（宿主分段近似渲染；None = 无）
+    #[serde(default)]
+    pub fill_gradient_along: Option<Vec<WitGradientStop>>,
+}
+
+/// WIT `layer-opts` — 层级绘制选项（canvas@2.1.0；缺省全 None = 普通层）
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WitLayerOpts {
+    /// 层不透明度（0-1；None = 1）
+    pub opacity: Option<f64>,
+    /// 层混合模式（"normal" | "screen" | "lighter" | "multiply" | "overlay" | "soft-light"）
+    pub blend: Option<String>,
+    /// 层裁剪 [x, y, w, h]（px；None = 不裁剪）
+    pub clip: Option<(f64, f64, f64, f64)>,
 }
 
 /// WIT `layer` — 渲染层
@@ -190,6 +204,9 @@ pub struct WitLayer {
     pub z_index: u32,
     /// 绘图指令
     pub commands: Vec<WitDrawCmd>,
+    /// canvas@2.1.0：层级绘制选项（None = 普通层）
+    #[serde(default)]
+    pub opts: Option<WitLayerOpts>,
 }
 
 // ─── mermaid:viz/diagram-renderer 域内类型 ──────────────────
